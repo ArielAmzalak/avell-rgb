@@ -77,7 +77,10 @@ def save_config(config: Config, path: Path = CONFIG_PATH) -> None:
     """Write `config` to `path` as pretty-printed JSON. Creates parent dir."""
     path.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(config.to_dict(), indent=2, sort_keys=False)
-    # atomic-ish: write to temp, then replace
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(text + "\n")
+    # Atomic-ish write: tempfile + fsync + rename
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "w") as f:
+        f.write(text + "\n")
+        f.flush()
+        os.fsync(f.fileno())
     tmp.replace(path)
