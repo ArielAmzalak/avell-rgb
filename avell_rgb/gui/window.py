@@ -41,7 +41,9 @@ class AvellWindow(Adw.ApplicationWindow):
         sidebar_box.append(sidebar_header)
 
         self.stack = Adw.ViewStack()
-        self.stack.add_titled(_stub_page("Agora"), "now", "Agora")
+        from avell_rgb.gui.page_now import NowPage
+
+        self.stack.add_titled(NowPage(), "now", "Agora")
         self.stack.add_titled(_stub_page("Presets"), "presets", "Presets")
         self.stack.add_titled(_stub_page("Agenda"), "schedule", "Agenda")
         self.stack.add_titled(_stub_page("Preferências"), "preferences", "Preferências")
