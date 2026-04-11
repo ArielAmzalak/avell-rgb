@@ -50,7 +50,9 @@ class AvellWindow(Adw.ApplicationWindow):
         from avell_rgb.gui.page_schedule import SchedulePage
 
         self.stack.add_titled(SchedulePage(), "schedule", "Agenda")
-        self.stack.add_titled(_stub_page("Preferências"), "preferences", "Preferências")
+        from avell_rgb.gui.page_preferences import PreferencesPage
+
+        self.stack.add_titled(PreferencesPage(), "preferences", "Preferências")
 
         sidebar_list = Adw.ViewSwitcher()
         sidebar_list.set_stack(self.stack)
@@ -69,3 +71,19 @@ class AvellWindow(Adw.ApplicationWindow):
         content_box.append(self.stack)
         content.set_child(content_box)
         split.set_content(content)
+
+        self.connect("close-request", self._on_close_request)
+
+    def _on_close_request(self, *_args) -> bool:
+        """On window close, clear manual_state unless user opted into 'keep'."""
+        from dataclasses import replace
+
+        from avell_rgb.config import load_config, save_config
+        from avell_rgb.gui.page_now import _reload_daemon
+
+        cfg = load_config()
+        if not cfg.manual_paused and cfg.manual_state is not None:
+            cfg = replace(cfg, manual_state=None)
+            save_config(cfg)
+            _reload_daemon()
+        return False  # allow close
