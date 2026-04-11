@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Avell RGB
+Comment=Control keyboard and light bar RGB on Avell laptops
+Exec=avell-rgb-gui
+Icon=io.github.avellrgb.Avell
+Terminal=false
+Categories=Utility;GTK;
+StartupNotify=true

@@ -1,0 +1,12 @@
+[Unit]
+Description=Avell RGB daemon (keyboard + lightbar scheduler)
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/avell-rgb-daemon
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target
