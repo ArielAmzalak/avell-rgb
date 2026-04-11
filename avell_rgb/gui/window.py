@@ -44,7 +44,9 @@ class AvellWindow(Adw.ApplicationWindow):
         from avell_rgb.gui.page_now import NowPage
 
         self.stack.add_titled(NowPage(), "now", "Agora")
-        self.stack.add_titled(_stub_page("Presets"), "presets", "Presets")
+        from avell_rgb.gui.page_presets import PresetsPage
+
+        self.stack.add_titled(PresetsPage(), "presets", "Presets")
         self.stack.add_titled(_stub_page("Agenda"), "schedule", "Agenda")
         self.stack.add_titled(_stub_page("Preferências"), "preferences", "Preferências")
 
