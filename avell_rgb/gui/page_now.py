@@ -26,10 +26,23 @@ from avell_rgb.state import (
 
 
 def _reload_daemon() -> None:
-    """Send SIGHUP to the daemon via systemctl --user."""
+    """Send SIGHUP to the daemon's main process only.
+
+    --kill-whom=main is required so systemd doesn't broadcast SIGHUP to the
+    whole service cgroup, which would otherwise kill any ite8291r3-ctl
+    subprocess the daemon just spawned (returncode -1 = killed by signal 1).
+    """
     try:
         subprocess.run(
-            ["systemctl", "--user", "kill", "-s", "HUP", "avell-rgb-daemon.service"],
+            [
+                "systemctl",
+                "--user",
+                "kill",
+                "--kill-whom=main",
+                "-s",
+                "HUP",
+                "avell-rgb-daemon.service",
+            ],
             check=False,
             capture_output=True,
         )

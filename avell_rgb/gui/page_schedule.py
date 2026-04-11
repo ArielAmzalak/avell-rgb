@@ -18,9 +18,18 @@ from avell_rgb.state import ScheduleBand, SolarConfig
 
 
 def _reload_daemon() -> None:
+    # See page_now._reload_daemon for why --kill-whom=main is required.
     try:
         subprocess.run(
-            ["systemctl", "--user", "kill", "-s", "HUP", "avell-rgb-daemon.service"],
+            [
+                "systemctl",
+                "--user",
+                "kill",
+                "--kill-whom=main",
+                "-s",
+                "HUP",
+                "avell-rgb-daemon.service",
+            ],
             check=False,
             capture_output=True,
         )
