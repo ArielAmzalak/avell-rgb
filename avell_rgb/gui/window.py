@@ -47,7 +47,9 @@ class AvellWindow(Adw.ApplicationWindow):
         from avell_rgb.gui.page_presets import PresetsPage
 
         self.stack.add_titled(PresetsPage(), "presets", "Presets")
-        self.stack.add_titled(_stub_page("Agenda"), "schedule", "Agenda")
+        from avell_rgb.gui.page_schedule import SchedulePage
+
+        self.stack.add_titled(SchedulePage(), "schedule", "Agenda")
         self.stack.add_titled(_stub_page("Preferências"), "preferences", "Preferências")
 
         sidebar_list = Adw.ViewSwitcher()
