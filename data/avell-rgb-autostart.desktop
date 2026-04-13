@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Avell RGB
+Exec=avell-rgb-gui --tray
+Icon=io.github.avellrgb.Avell
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+Comment=System tray for Avell RGB keyboard and lightbar control
