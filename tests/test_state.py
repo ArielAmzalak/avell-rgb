@@ -1,107 +1,76 @@
 from avell_rgb.state import (
     Config,
-    DeviceState,
-    KeyboardEffect,
-    KeyboardOff,
-    KeyboardSolid,
-    LightbarState,
-    ScheduleBand,
+    EffectConfig,
+    Preset,
     SolarConfig,
+    VALID_EFFECTS,
+    VALID_MODES,
 )
 
 
-def test_keyboard_solid_round_trip():
-    k = KeyboardSolid(color="#00FFFF", brightness=30)
-    d = k.to_dict()
-    assert d == {"type": "solid", "color": "#00FFFF", "brightness": 30}
-    assert KeyboardSolid.from_dict(d) == k
+def test_valid_modes():
+    assert VALID_MODES == ("fixed", "solar", "effect", "off")
 
 
-def test_keyboard_effect_round_trip():
-    k = KeyboardEffect(
-        effect="wave", color="rainbow", speed=5, direction="right", brightness=50
-    )
-    d = k.to_dict()
-    assert d["type"] == "effect"
-    from_back = KeyboardEffect.from_dict(d)
-    assert from_back == k
+def test_valid_effects_includes_breathing():
+    assert "breathing" in VALID_EFFECTS
 
 
-def test_keyboard_off_round_trip():
-    k = KeyboardOff()
-    assert k.to_dict() == {"type": "off"}
-    assert KeyboardOff.from_dict({"type": "off"}) == k
+def test_preset_round_trip():
+    p = Preset(color="#00FFFF", brightness=30)
+    d = p.to_dict()
+    assert d == {"color": "#00FFFF", "brightness": 30}
+    assert Preset.from_dict(d) == p
 
 
-def test_device_state_with_solid_kb():
-    state = DeviceState(
-        keyboard=KeyboardSolid(color="#FF0000", brightness=20),
-        lightbar=LightbarState(color="#00FF00", brightness=50),
-    )
-    d = state.to_dict()
-    assert d["keyboard"]["type"] == "solid"
-    assert d["lightbar"]["color"] == "#00FF00"
-    back = DeviceState.from_dict(d)
-    assert back == state
-
-
-def test_device_state_with_effect_kb():
-    state = DeviceState(
-        keyboard=KeyboardEffect(
-            effect="breathing", color="purple", speed=3, direction=None, brightness=40
-        ),
-        lightbar=LightbarState(color="#FFFFFF", brightness=100),
-    )
-    back = DeviceState.from_dict(state.to_dict())
-    assert back == state
-
-
-def test_schedule_band_round_trip():
-    b = ScheduleBand(start="07:00", end="18:00", preset="trabalho")
-    assert b.to_dict() == {"start": "07:00", "end": "18:00", "preset": "trabalho"}
-    assert ScheduleBand.from_dict(b.to_dict()) == b
+def test_effect_config_round_trip():
+    e = EffectConfig(name="breathing", color="#00FFFF", speed=5)
+    d = e.to_dict()
+    assert d == {"name": "breathing", "color": "#00FFFF", "speed": 5}
+    assert EffectConfig.from_dict(d) == e
 
 
 def test_solar_config_round_trip():
     s = SolarConfig(
         latitude=-23.55,
         longitude=-46.63,
-        day_color="#FFFFFF",
-        night_color="#FF6600",
+        day_color="#8FF0A4",
+        night_color="#FF7800",
         day_brightness=50,
         night_brightness=20,
-        apply_to=("keyboard", "lightbar"),
     )
     back = SolarConfig.from_dict(s.to_dict())
     assert back == s
 
 
+def test_solar_config_no_apply_to():
+    s = SolarConfig(
+        latitude=0, longitude=0,
+        day_color="#FFF", night_color="#000",
+        day_brightness=50, night_brightness=10,
+    )
+    d = s.to_dict()
+    assert "apply_to" not in d
+
+
 def test_config_round_trip():
     cfg = Config(
-        version=1,
-        mode="schedule",
-        manual_paused=False,
-        manual_state=None,
-        presets={
-            "trabalho": DeviceState(
-                keyboard=KeyboardSolid(color="#00FFFF", brightness=30),
-                lightbar=LightbarState(color="#00FFFF", brightness=80),
-            ),
-            "off": DeviceState(
-                keyboard=KeyboardOff(),
-                lightbar=LightbarState(color="#000000", brightness=0),
-            ),
-        },
-        schedule=[ScheduleBand(start="07:00", end="18:00", preset="trabalho")],
+        version=2,
+        mode="fixed",
+        color="#00FFFF",
+        brightness=30,
+        independent_colors=False,
+        keyboard_color="#00FFFF",
+        keyboard_brightness=30,
+        lightbar_color="#00FFFF",
+        lightbar_brightness=80,
+        effect=EffectConfig(name="breathing", color="#00FFFF", speed=5),
         solar=SolarConfig(
-            latitude=0.0,
-            longitude=0.0,
-            day_color="#FFFFFF",
-            night_color="#000000",
-            day_brightness=50,
-            night_brightness=10,
-            apply_to=("keyboard", "lightbar"),
+            latitude=-23.55, longitude=-46.63,
+            day_color="#8FF0A4", night_color="#FF7800",
+            day_brightness=50, night_brightness=20,
         ),
+        presets={"trabalho": Preset(color="#00FFFF", brightness=30)},
     )
     back = Config.from_dict(cfg.to_dict())
     assert back == cfg
@@ -109,23 +78,51 @@ def test_config_round_trip():
 
 def test_config_mode_must_be_valid():
     import pytest
-    with pytest.raises(ValueError):
-        Config.from_dict(
-            {
-                "version": 1,
-                "mode": "bogus",
-                "manual_paused": False,
-                "manual_state": None,
-                "presets": {},
-                "schedule": [],
-                "solar": SolarConfig(
-                    latitude=0.0,
-                    longitude=0.0,
-                    day_color="#000000",
-                    night_color="#000000",
-                    day_brightness=0,
-                    night_brightness=0,
-                    apply_to=(),
-                ).to_dict(),
-            }
-        )
+    with pytest.raises(ValueError, match="invalid mode"):
+        Config.from_dict({
+            "version": 2, "mode": "bogus", "color": "#FFF", "brightness": 30,
+            "independent_colors": False,
+            "keyboard_color": "#FFF", "keyboard_brightness": 30,
+            "lightbar_color": "#FFF", "lightbar_brightness": 80,
+            "effect": {"name": "breathing", "color": "#FFF", "speed": 5},
+            "solar": {
+                "latitude": 0, "longitude": 0,
+                "day_color": "#FFF", "night_color": "#000",
+                "day_brightness": 50, "night_brightness": 10,
+            },
+            "presets": {},
+        })
+
+
+def test_config_resolved_colors_unified():
+    cfg = Config(
+        version=2, mode="fixed", color="#FF0000", brightness=25,
+        independent_colors=False,
+        keyboard_color="#IGNORED", keyboard_brightness=99,
+        lightbar_color="#IGNORED", lightbar_brightness=99,
+        effect=EffectConfig(name="breathing", color="#FF0000", speed=5),
+        solar=SolarConfig(0, 0, "#FFF", "#000", 50, 10),
+        presets={},
+    )
+    kb_color, kb_bri, lb_color, lb_bri = cfg.resolved_colors()
+    assert kb_color == "#FF0000"
+    assert kb_bri == 25
+    assert lb_color == "#FF0000"
+    assert lb_bri == 50  # 25 * 2
+
+
+def test_config_resolved_colors_independent():
+    cfg = Config(
+        version=2, mode="fixed", color="#IGNORED", brightness=99,
+        independent_colors=True,
+        keyboard_color="#00FF00", keyboard_brightness=20,
+        lightbar_color="#0000FF", lightbar_brightness=60,
+        effect=EffectConfig(name="breathing", color="#FFF", speed=5),
+        solar=SolarConfig(0, 0, "#FFF", "#000", 50, 10),
+        presets={},
+    )
+    kb_color, kb_bri, lb_color, lb_bri = cfg.resolved_colors()
+    assert kb_color == "#00FF00"
+    assert kb_bri == 20
+    assert lb_color == "#0000FF"
+    assert lb_bri == 60

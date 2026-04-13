@@ -1,11 +1,11 @@
-"""Immutable dataclasses for the entire config model, with JSON round-trip."""
+"""Immutable dataclasses for Config v2, with JSON round-trip."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal, Optional, Union
+from typing import Literal
 
-VALID_MODES = ("schedule", "solar")
+VALID_MODES = ("fixed", "solar", "effect", "off")
 VALID_EFFECTS = (
     "breathing",
     "wave",
@@ -20,115 +20,30 @@ VALID_EFFECTS = (
 
 
 @dataclass(frozen=True)
-class KeyboardSolid:
-    color: str  # "#RRGGBB"
-    brightness: int  # 0-50 (ite8291r3-ctl accepts 0-50)
-
-    def to_dict(self) -> dict:
-        return {"type": "solid", "color": self.color, "brightness": self.brightness}
-
-    @classmethod
-    def from_dict(cls, d: dict) -> "KeyboardSolid":
-        return cls(color=d["color"], brightness=int(d["brightness"]))
-
-
-@dataclass(frozen=True)
-class KeyboardEffect:
-    effect: str  # one of VALID_EFFECTS
-    color: str  # palette name ("rainbow", "random", "red"...) or "#RRGGBB"
-    speed: int  # 0-10
-    direction: Optional[str]  # "left" | "right" | "up" | "down" | None
-    brightness: int  # 0-50
-
-    def to_dict(self) -> dict:
-        return {
-            "type": "effect",
-            "effect": self.effect,
-            "color": self.color,
-            "speed": self.speed,
-            "direction": self.direction,
-            "brightness": self.brightness,
-        }
-
-    @classmethod
-    def from_dict(cls, d: dict) -> "KeyboardEffect":
-        return cls(
-            effect=d["effect"],
-            color=d["color"],
-            speed=int(d["speed"]),
-            direction=d.get("direction"),
-            brightness=int(d["brightness"]),
-        )
-
-
-@dataclass(frozen=True)
-class KeyboardOff:
-    def to_dict(self) -> dict:
-        return {"type": "off"}
-
-    @classmethod
-    def from_dict(cls, d: dict) -> "KeyboardOff":
-        return cls()
-
-
-KeyboardState = Union[KeyboardSolid, KeyboardEffect, KeyboardOff]
-
-
-def keyboard_from_dict(d: dict) -> KeyboardState:
-    t = d.get("type")
-    if t == "solid":
-        return KeyboardSolid.from_dict(d)
-    if t == "effect":
-        return KeyboardEffect.from_dict(d)
-    if t == "off":
-        return KeyboardOff.from_dict(d)
-    raise ValueError(f"unknown keyboard state type: {t!r}")
-
-
-@dataclass(frozen=True)
-class LightbarState:
-    color: str  # "#RRGGBB"
-    brightness: int  # 0-100
+class Preset:
+    color: str
+    brightness: int
 
     def to_dict(self) -> dict:
         return {"color": self.color, "brightness": self.brightness}
 
     @classmethod
-    def from_dict(cls, d: dict) -> "LightbarState":
+    def from_dict(cls, d: dict) -> "Preset":
         return cls(color=d["color"], brightness=int(d["brightness"]))
 
 
 @dataclass(frozen=True)
-class DeviceState:
-    keyboard: KeyboardState
-    lightbar: LightbarState
+class EffectConfig:
+    name: str
+    color: str
+    speed: int
 
     def to_dict(self) -> dict:
-        return {
-            "keyboard": self.keyboard.to_dict(),
-            "lightbar": self.lightbar.to_dict(),
-        }
+        return {"name": self.name, "color": self.color, "speed": self.speed}
 
     @classmethod
-    def from_dict(cls, d: dict) -> "DeviceState":
-        return cls(
-            keyboard=keyboard_from_dict(d["keyboard"]),
-            lightbar=LightbarState.from_dict(d["lightbar"]),
-        )
-
-
-@dataclass(frozen=True)
-class ScheduleBand:
-    start: str  # "HH:MM"
-    end: str  # "HH:MM"
-    preset: str  # preset key
-
-    def to_dict(self) -> dict:
-        return {"start": self.start, "end": self.end, "preset": self.preset}
-
-    @classmethod
-    def from_dict(cls, d: dict) -> "ScheduleBand":
-        return cls(start=d["start"], end=d["end"], preset=d["preset"])
+    def from_dict(cls, d: dict) -> "EffectConfig":
+        return cls(name=d["name"], color=d["color"], speed=int(d["speed"]))
 
 
 @dataclass(frozen=True)
@@ -139,7 +54,6 @@ class SolarConfig:
     night_color: str
     day_brightness: int
     night_brightness: int
-    apply_to: tuple[str, ...]  # subset of ("keyboard", "lightbar")
 
     def to_dict(self) -> dict:
         return {
@@ -149,7 +63,6 @@ class SolarConfig:
             "night_color": self.night_color,
             "day_brightness": self.day_brightness,
             "night_brightness": self.night_brightness,
-            "apply_to": list(self.apply_to),
         }
 
     @classmethod
@@ -161,29 +74,53 @@ class SolarConfig:
             night_color=d["night_color"],
             day_brightness=int(d["day_brightness"]),
             night_brightness=int(d["night_brightness"]),
-            apply_to=tuple(d["apply_to"]),
         )
 
 
 @dataclass(frozen=True)
 class Config:
     version: int
-    mode: Literal["schedule", "solar"]
-    manual_paused: bool
-    manual_state: Optional[DeviceState]
-    presets: dict[str, DeviceState]
-    schedule: list[ScheduleBand]
+    mode: str
+    color: str
+    brightness: int
+    independent_colors: bool
+    keyboard_color: str
+    keyboard_brightness: int
+    lightbar_color: str
+    lightbar_brightness: int
+    effect: EffectConfig
     solar: SolarConfig
+    presets: dict[str, Preset]
+
+    def resolved_colors(self) -> tuple[str, int, str, int]:
+        if self.independent_colors:
+            return (
+                self.keyboard_color,
+                self.keyboard_brightness,
+                self.lightbar_color,
+                self.lightbar_brightness,
+            )
+        return (
+            self.color,
+            self.brightness,
+            self.color,
+            min(100, self.brightness * 2),
+        )
 
     def to_dict(self) -> dict:
         return {
             "version": self.version,
             "mode": self.mode,
-            "manual_paused": self.manual_paused,
-            "manual_state": self.manual_state.to_dict() if self.manual_state else None,
-            "presets": {k: v.to_dict() for k, v in self.presets.items()},
-            "schedule": [b.to_dict() for b in self.schedule],
+            "color": self.color,
+            "brightness": self.brightness,
+            "independent_colors": self.independent_colors,
+            "keyboard_color": self.keyboard_color,
+            "keyboard_brightness": self.keyboard_brightness,
+            "lightbar_color": self.lightbar_color,
+            "lightbar_brightness": self.lightbar_brightness,
+            "effect": self.effect.to_dict(),
             "solar": self.solar.to_dict(),
+            "presets": {k: v.to_dict() for k, v in self.presets.items()},
         }
 
     @classmethod
@@ -194,13 +131,14 @@ class Config:
         return cls(
             version=int(d["version"]),
             mode=mode,
-            manual_paused=bool(d["manual_paused"]),
-            manual_state=(
-                DeviceState.from_dict(d["manual_state"])
-                if d.get("manual_state") is not None
-                else None
-            ),
-            presets={k: DeviceState.from_dict(v) for k, v in d["presets"].items()},
-            schedule=[ScheduleBand.from_dict(b) for b in d["schedule"]],
+            color=d["color"],
+            brightness=int(d["brightness"]),
+            independent_colors=bool(d["independent_colors"]),
+            keyboard_color=d["keyboard_color"],
+            keyboard_brightness=int(d["keyboard_brightness"]),
+            lightbar_color=d["lightbar_color"],
+            lightbar_brightness=int(d["lightbar_brightness"]),
+            effect=EffectConfig.from_dict(d["effect"]),
             solar=SolarConfig.from_dict(d["solar"]),
+            presets={k: Preset.from_dict(v) for k, v in d["presets"].items()},
         )
