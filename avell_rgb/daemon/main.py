@@ -1,7 +1,5 @@
 """Daemon: computes desired state and applies via backends."""
 
-from __future__ import annotations
-
 import logging
 import math
 import sys
@@ -130,7 +128,6 @@ def main() -> int:
 
     from dasbus.connection import SessionMessageBus
     from dasbus.server.interface import dbus_interface
-    from dasbus.typing import Str, Int32
     from dasbus.signal import Signal
 
     logging.basicConfig(
@@ -151,32 +148,32 @@ def main() -> int:
         def __init__(self):
             self.StateChanged = Signal()
 
-        def SetMode(self, mode: Str):
+        def SetMode(self, mode: str):
             api.SetMode(mode)
             c = api.config
             self.StateChanged.emit(c.mode, c.color, c.brightness)
 
-        def SetColor(self, hex_color: Str, brightness: Int32):
+        def SetColor(self, hex_color: str, brightness: int):
             api.SetColor(hex_color, brightness)
             c = api.config
             self.StateChanged.emit(c.mode, c.color, c.brightness)
 
-        def SetEffect(self, name: Str, color: Str, speed: Int32):
+        def SetEffect(self, name: str, color: str, speed: int):
             api.SetEffect(name, color, speed)
             c = api.config
             self.StateChanged.emit(c.mode, c.color, c.brightness)
 
-        def ApplyPreset(self, name: Str):
+        def ApplyPreset(self, name: str):
             api.ApplyPreset(name)
             c = api.config
             self.StateChanged.emit(c.mode, c.color, c.brightness)
 
-        def GetState(self) -> Str:
+        def GetState(self) -> str:
             import json
             m, c, e, b = api.GetState()
             return json.dumps({"mode": m, "color": c, "effect": e, "brightness": b})
 
-        def ListPresets(self) -> Str:
+        def ListPresets(self) -> str:
             import json
             return json.dumps([
                 {"name": n, "color": c, "brightness": b}
