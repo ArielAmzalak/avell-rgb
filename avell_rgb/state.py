@@ -23,13 +23,35 @@ VALID_EFFECTS = (
 class Preset:
     color: str
     brightness: int
+    independent: bool = False
+    keyboard_color: str = ""
+    keyboard_brightness: int = 0
+    lightbar_color: str = ""
+    lightbar_brightness: int = 0
 
     def to_dict(self) -> dict:
-        return {"color": self.color, "brightness": self.brightness}
+        d = {"color": self.color, "brightness": self.brightness}
+        if self.independent:
+            d.update(
+                independent=True,
+                keyboard_color=self.keyboard_color,
+                keyboard_brightness=self.keyboard_brightness,
+                lightbar_color=self.lightbar_color,
+                lightbar_brightness=self.lightbar_brightness,
+            )
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> "Preset":
-        return cls(color=d["color"], brightness=int(d["brightness"]))
+        return cls(
+            color=d["color"],
+            brightness=int(d["brightness"]),
+            independent=bool(d.get("independent", False)),
+            keyboard_color=d.get("keyboard_color", ""),
+            keyboard_brightness=int(d.get("keyboard_brightness", 0)),
+            lightbar_color=d.get("lightbar_color", ""),
+            lightbar_brightness=int(d.get("lightbar_brightness", 0)),
+        )
 
 
 @dataclass(frozen=True)
@@ -37,13 +59,24 @@ class EffectConfig:
     name: str
     color: str
     speed: int
+    brightness: int = 25
 
     def to_dict(self) -> dict:
-        return {"name": self.name, "color": self.color, "speed": self.speed}
+        return {
+            "name": self.name,
+            "color": self.color,
+            "speed": self.speed,
+            "brightness": self.brightness,
+        }
 
     @classmethod
     def from_dict(cls, d: dict) -> "EffectConfig":
-        return cls(name=d["name"], color=d["color"], speed=int(d["speed"]))
+        return cls(
+            name=d["name"],
+            color=d["color"],
+            speed=int(d["speed"]),
+            brightness=int(d.get("brightness", 25)),
+        )
 
 
 @dataclass(frozen=True)

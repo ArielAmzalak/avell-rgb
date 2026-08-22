@@ -7,9 +7,10 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import Adw, Gio  # noqa: E402
+from gi.repository import Adw, Gdk, Gio, Gtk  # noqa: E402
 
 from avell_rgb.dbus_client import DaemonClient  # noqa: E402
+from avell_rgb.gui.style import CSS  # noqa: E402
 from avell_rgb.gui.window import AvellWindow  # noqa: E402
 
 
@@ -26,5 +27,14 @@ class AvellApp(Adw.Application):
         if self._window is None:
             style = Adw.StyleManager.get_default()
             style.set_color_scheme(Adw.ColorScheme.FORCE_DARK)
+
+            provider = Gtk.CssProvider()
+            provider.load_from_data(CSS.encode())
+            Gtk.StyleContext.add_provider_for_display(
+                Gdk.Display.get_default(),
+                provider,
+                Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
+            )
+
             self._window = AvellWindow(application=self, client=self._client)
         self._window.present()

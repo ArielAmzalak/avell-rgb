@@ -24,14 +24,23 @@ class DaemonClient:
     def set_color(self, hex_color: str, brightness: int) -> None:
         self._proxy.SetColor(hex_color, brightness)
 
-    def set_effect(self, name: str, color: str, speed: int) -> None:
-        self._proxy.SetEffect(name, color, speed)
+    def set_device_color(self, device: str, hex_color: str, brightness: int) -> None:
+        self._proxy.SetDeviceColor(device, hex_color, brightness)
+
+    def set_effect(self, name: str, color: str, speed: int, brightness: int) -> None:
+        self._proxy.SetEffect(name, color, speed, brightness)
 
     def set_solar(self, lat: float, lon: float, day_color: str, night_color: str, day_bri: int, night_bri: int) -> None:
         self._proxy.SetSolar(lat, lon, day_color, night_color, day_bri, night_bri)
 
     def apply_preset(self, name: str) -> None:
         self._proxy.ApplyPreset(name)
+
+    def save_preset(self, name: str) -> None:
+        self._proxy.SavePreset(name)
+
+    def delete_preset(self, name: str) -> None:
+        self._proxy.DeletePreset(name)
 
     def get_state(self) -> dict:
         result = self._proxy.GetState()

@@ -146,7 +146,15 @@ class TrayIcon:
     def _on_effect_selected(self, _item, effect_name: str) -> None:
         try:
             state = self._client.get_state()
-            self._client.set_effect(effect_name, state["color"], 5)
+            eff = state.get("effect", {})
+            if not isinstance(eff, dict):
+                eff = {}
+            self._client.set_effect(
+                effect_name,
+                eff.get("color", state["color"]),
+                eff.get("speed", 5),
+                eff.get("brightness", 25),
+            )
         except Exception:
             log.exception("failed to set effect %s", effect_name)
 

@@ -26,8 +26,25 @@ def test_preset_round_trip():
 def test_effect_config_round_trip():
     e = EffectConfig(name="breathing", color="#00FFFF", speed=5)
     d = e.to_dict()
-    assert d == {"name": "breathing", "color": "#00FFFF", "speed": 5}
+    assert d == {"name": "breathing", "color": "#00FFFF", "speed": 5, "brightness": 25}
     assert EffectConfig.from_dict(d) == e
+
+
+def test_effect_config_from_dict_without_brightness():
+    e = EffectConfig.from_dict({"name": "wave", "color": "#FF0000", "speed": 3})
+    assert e.brightness == 25
+
+
+def test_preset_independent_round_trip():
+    p = Preset(
+        color="#FF0000", brightness=30, independent=True,
+        keyboard_color="#FF0000", keyboard_brightness=30,
+        lightbar_color="#0000FF", lightbar_brightness=70,
+    )
+    d = p.to_dict()
+    assert d["independent"] is True
+    assert d["lightbar_color"] == "#0000FF"
+    assert Preset.from_dict(d) == p
 
 
 def test_solar_config_round_trip():

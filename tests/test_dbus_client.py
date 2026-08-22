@@ -17,8 +17,11 @@ class FakeProxy:
     def SetColor(self, hex_color, brightness):
         self.calls.append(("SetColor", hex_color, brightness))
 
-    def SetEffect(self, name, color, speed):
-        self.calls.append(("SetEffect", name, color, speed))
+    def SetDeviceColor(self, device, hex_color, brightness):
+        self.calls.append(("SetDeviceColor", device, hex_color, brightness))
+
+    def SetEffect(self, name, color, speed, brightness):
+        self.calls.append(("SetEffect", name, color, speed, brightness))
 
     def SetSolar(self, lat, lon, day_color, night_color, day_bri, night_bri):
         self.calls.append(("SetSolar", lat, lon, day_color, night_color, day_bri, night_bri))
@@ -26,9 +29,19 @@ class FakeProxy:
     def ApplyPreset(self, name):
         self.calls.append(("ApplyPreset", name))
 
+    def SavePreset(self, name):
+        self.calls.append(("SavePreset", name))
+
+    def DeletePreset(self, name):
+        self.calls.append(("DeletePreset", name))
+
     def GetState(self):
         return json.dumps({
-            "mode": "fixed", "color": "#00FFFF", "effect": "breathing", "brightness": 30,
+            "mode": "fixed", "color": "#00FFFF", "brightness": 30,
+            "independent_colors": False,
+            "keyboard_color": "#00FFFF", "keyboard_brightness": 30,
+            "lightbar_color": "#00FFFF", "lightbar_brightness": 80,
+            "effect": {"name": "breathing", "color": "#00FFFF", "speed": 5, "brightness": 25},
             "solar": {
                 "latitude": -23.55, "longitude": -46.63,
                 "day_color": "#8FF0A4", "night_color": "#FF7800",
@@ -57,11 +70,18 @@ def test_client_set_color():
     assert proxy.calls[-1] == ("SetColor", "#FF0000", 25)
 
 
+def test_client_set_device_color():
+    proxy = FakeProxy()
+    client = DaemonClient(proxy=proxy)
+    client.set_device_color("lightbar", "#FF00FF", 66)
+    assert proxy.calls[-1] == ("SetDeviceColor", "lightbar", "#FF00FF", 66)
+
+
 def test_client_set_effect():
     proxy = FakeProxy()
     client = DaemonClient(proxy=proxy)
-    client.set_effect("wave", "#00FF00", 8)
-    assert proxy.calls[-1] == ("SetEffect", "wave", "#00FF00", 8)
+    client.set_effect("wave", "#00FF00", 8, 42)
+    assert proxy.calls[-1] == ("SetEffect", "wave", "#00FF00", 8, 42)
 
 
 def test_client_apply_preset():
@@ -71,14 +91,32 @@ def test_client_apply_preset():
     assert proxy.calls[-1] == ("ApplyPreset", "night")
 
 
+def test_client_save_preset():
+    proxy = FakeProxy()
+    client = DaemonClient(proxy=proxy)
+    client.save_preset("gamer")
+    assert proxy.calls[-1] == ("SavePreset", "gamer")
+
+
+def test_client_delete_preset():
+    proxy = FakeProxy()
+    client = DaemonClient(proxy=proxy)
+    client.delete_preset("gamer")
+    assert proxy.calls[-1] == ("DeletePreset", "gamer")
+
+
 def test_client_get_state():
     proxy = FakeProxy()
     client = DaemonClient(proxy=proxy)
     state = client.get_state()
     assert state["mode"] == "fixed"
     assert state["color"] == "#00FFFF"
-    assert state["effect"] == "breathing"
     assert state["brightness"] == 30
+    assert state["independent_colors"] is False
+    assert state["keyboard_color"] == "#00FFFF"
+    assert state["lightbar_brightness"] == 80
+    assert state["effect"]["name"] == "breathing"
+    assert state["effect"]["brightness"] == 25
 
 
 def test_client_list_presets():

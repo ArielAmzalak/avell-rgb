@@ -3,7 +3,7 @@
 import logging
 import math
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Callable, Optional, Protocol
 
 from avell_rgb.config import load_config, save_config
@@ -42,7 +42,9 @@ class DaemonCore:
         config: Config,
         keyboard: KeyboardProto,
         lightbar: LightbarProto,
-        clock: Callable[[], datetime] = datetime.now,
+        # Aware UTC: astral treats naive datetimes as UTC, which shifts the
+        # day/night transition by the local UTC offset.
+        clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ):
         self.config = config
         self.keyboard = keyboard
@@ -75,12 +77,12 @@ class DaemonCore:
         self._safe_kb(
             lambda: self.keyboard.apply_effect(
                 effect=eff.name, color=eff.color,
-                speed=eff.speed, direction=None, brightness=self.config.brightness,
+                speed=eff.speed, direction=None, brightness=eff.brightness,
             )
         )
         self._safe_lb(
             lambda: self.lightbar.apply(
-                _hex_to_rgb(eff.color), min(100, self.config.brightness * 2)
+                _hex_to_rgb(eff.color), min(100, eff.brightness * 2)
             )
         )
 
@@ -158,8 +160,13 @@ def main() -> int:
             c = api.config
             self.StateChanged.emit(c.mode, c.color, c.brightness)
 
-        def SetEffect(self, name: str, color: str, speed: int):
-            api.SetEffect(name, color, speed)
+        def SetDeviceColor(self, device: str, hex_color: str, brightness: int):
+            api.SetDeviceColor(device, hex_color, brightness)
+            c = api.config
+            self.StateChanged.emit(c.mode, c.keyboard_color, c.keyboard_brightness)
+
+        def SetEffect(self, name: str, color: str, speed: int, brightness: int):
+            api.SetEffect(name, color, speed, brightness)
             c = api.config
             self.StateChanged.emit(c.mode, c.color, c.brightness)
 
@@ -173,17 +180,19 @@ def main() -> int:
             c = api.config
             self.StateChanged.emit(c.mode, c.color, c.brightness)
 
+        def SavePreset(self, name: str):
+            api.SavePreset(name)
+
+        def DeletePreset(self, name: str):
+            api.DeletePreset(name)
+
         def GetState(self) -> str:
             import json
-            m, c, e, b, solar = api.GetState()
-            return json.dumps({"mode": m, "color": c, "effect": e, "brightness": b, "solar": solar})
+            return json.dumps(api.GetState())
 
         def ListPresets(self) -> str:
             import json
-            return json.dumps([
-                {"name": n, "color": c, "brightness": b}
-                for n, c, b in api.ListPresets()
-            ])
+            return json.dumps(api.ListPresets())
 
     bus = SessionMessageBus()
     adapter = DBusAdapter()
