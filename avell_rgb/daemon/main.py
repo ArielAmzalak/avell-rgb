@@ -3,12 +3,17 @@
 import logging
 import math
 import sys
+import time
 from datetime import datetime, timezone
 from typing import Callable, Optional, Protocol
 
+from avell_rgb import lightbar_fx
 from avell_rgb.config import load_config, save_config
 from avell_rgb.solar import interpolate_solar
 from avell_rgb.state import Config
+
+# Software animation rate for the lightbar (sysfs writes; keep gentle).
+ANIM_TICK_SECONDS = 0.05
 
 log = logging.getLogger("avell_rgb.daemon")
 
@@ -45,14 +50,20 @@ class DaemonCore:
         # Aware UTC: astral treats naive datetimes as UTC, which shifts the
         # day/night transition by the local UTC offset.
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+        mono: Callable[[], float] = time.monotonic,
     ):
         self.config = config
         self.keyboard = keyboard
         self.lightbar = lightbar
         self.clock = clock
+        self.mono = mono
+        self._anim_start: Optional[float] = None
+        self._last_frame: Optional[tuple] = None
 
     def apply_current(self) -> None:
         mode = self.config.mode
+        self._anim_start = None
+        self._last_frame = None
         if mode == "off":
             self._safe_kb(lambda: self.keyboard.off())
             self._safe_lb(lambda: self.lightbar.off())
@@ -80,11 +91,30 @@ class DaemonCore:
                 speed=eff.speed, direction=None, brightness=eff.brightness,
             )
         )
-        self._safe_lb(
-            lambda: self.lightbar.apply(
-                _hex_to_rgb(eff.color), min(100, eff.brightness * 2)
-            )
+        self._anim_start = self.mono()
+        self.animate_step()
+
+    def animating(self) -> bool:
+        return self.config.mode == "effect" and self._anim_start is not None
+
+    def tick_seconds(self) -> Optional[float]:
+        return ANIM_TICK_SECONDS if self.animating() else None
+
+    def animate_step(self) -> None:
+        """Write the current lightbar animation frame (dedup identical frames)."""
+        if not self.animating():
+            return
+        eff = self.config.effect
+        t = self.mono() - self._anim_start
+        rgb, bri = lightbar_fx.frame(
+            eff.name, _hex_to_rgb(eff.color), eff.speed,
+            min(100, eff.brightness * 2), t,
         )
+        new_frame = (rgb, bri)
+        if new_frame == self._last_frame:
+            return
+        self._last_frame = new_frame
+        self._safe_lb(lambda: self.lightbar.apply(rgb, bri))
 
     def _apply_solar(self) -> None:
         color, kb_bri, lb_bri = interpolate_solar(self.config.solar, self.clock())
@@ -227,19 +257,18 @@ def main() -> int:
 
             delay = core.sleep_seconds()
             wakeup.clear()
+            aloop = asyncio.get_event_loop()
+            deadline = None if math.isinf(delay) else aloop.time() + delay
 
-            if math.isinf(delay):
-                while not wakeup.is_set():
-                    pump_glib()
-                    await asyncio.sleep(0.1)
-            else:
-                deadline = asyncio.get_event_loop().time() + delay
-                while not wakeup.is_set():
-                    remaining = deadline - asyncio.get_event_loop().time()
-                    if remaining <= 0:
-                        break
-                    pump_glib()
-                    await asyncio.sleep(min(0.1, remaining))
+            while not wakeup.is_set():
+                if deadline is not None and aloop.time() >= deadline:
+                    break
+                pump_glib()
+                core.animate_step()
+                interval = core.tick_seconds() or 0.1
+                if deadline is not None:
+                    interval = min(interval, max(0.01, deadline - aloop.time()))
+                await asyncio.sleep(interval)
 
     try:
         asyncio.run(run())

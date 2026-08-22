@@ -17,6 +17,8 @@ gi.require_version("Gtk", "4.0")
 
 from gi.repository import GLib, Gtk
 
+from avell_rgb import lightbar_fx
+
 # Simplified ANSI-ish key layout: rows of relative key widths.
 _ROWS: tuple[tuple[float, ...], ...] = (
     tuple([1.0] * 14),
@@ -84,6 +86,8 @@ class LaptopPreview(Gtk.DrawingArea):
         self._lb_level = max(0.0, min(1.0, level))
         self._effect = name
         self._speed = max(1, speed)
+        self._lb_base255 = tuple(round(c * 255) for c in self._kb_rgb)
+        self._lb_max_bri = round(max(0.0, min(1.0, level)) * 100)
         self._start_tick()
         self.queue_draw()
 
@@ -107,6 +111,13 @@ class LaptopPreview(Gtk.DrawingArea):
 
     def _on_tick(self) -> bool:
         self._t += _TICK_MS / 1000.0
+        if self._effect is not None:
+            rgb, bri = lightbar_fx.frame(
+                self._effect, self._lb_base255, self._speed,
+                self._lb_max_bri, self._t,
+            )
+            self._lb_rgb = (rgb[0] / 255, rgb[1] / 255, rgb[2] / 255)
+            self._lb_level = bri / 100
         self.queue_draw()
         return GLib.SOURCE_CONTINUE
 

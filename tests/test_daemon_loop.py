@@ -136,3 +136,43 @@ def test_apply_catches_backend_exception():
     core = DaemonCore(config=_cfg(), keyboard=kb, lightbar=bar)
     core.apply_current()  # should not raise
     assert bar.calls[-1][0] == "apply"
+
+
+def test_effect_mode_animates_lightbar():
+    now = [100.0]
+    kb, bar = FakeKeyboardBackend(), FakeLightbarBackend()
+    core = DaemonCore(
+        config=_cfg(mode="effect", effect_name="breathing", effect_color="#FF0000"),
+        keyboard=kb, lightbar=bar, mono=lambda: now[0],
+    )
+    core.apply_current()
+    assert core.animating()
+    assert core.tick_seconds() is not None
+    frames_before = len(bar.calls)
+    now[0] += 0.4
+    core.animate_step()
+    assert len(bar.calls) == frames_before + 1
+    assert bar.calls[-1][0] == "apply"
+
+
+def test_animate_step_dedups_identical_frames():
+    now = [100.0]
+    kb, bar = FakeKeyboardBackend(), FakeLightbarBackend()
+    core = DaemonCore(
+        config=_cfg(mode="effect", effect_name="breathing", effect_color="#FF0000"),
+        keyboard=kb, lightbar=bar, mono=lambda: now[0],
+    )
+    core.apply_current()
+    frames = len(bar.calls)
+    core.animate_step()  # same t → same frame → no write
+    assert len(bar.calls) == frames
+
+
+def test_animate_step_noop_outside_effect_mode():
+    kb, bar = FakeKeyboardBackend(), FakeLightbarBackend()
+    core = DaemonCore(config=_cfg(mode="fixed"), keyboard=kb, lightbar=bar)
+    core.apply_current()
+    frames = len(bar.calls)
+    core.animate_step()
+    assert len(bar.calls) == frames
+    assert core.tick_seconds() is None
