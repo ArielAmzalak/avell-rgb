@@ -96,6 +96,7 @@ class KeyboardBackend:
         self._run([BINARY, "off"])
 
     def _run(self, cmd: list[str]) -> None:
+        log.info("apply: %s", " ".join(cmd[1:]))
         try:
             subprocess.run(cmd, check=True, capture_output=True, text=True)
         except FileNotFoundError:

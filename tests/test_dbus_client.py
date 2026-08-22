@@ -20,11 +20,21 @@ class FakeProxy:
     def SetEffect(self, name, color, speed):
         self.calls.append(("SetEffect", name, color, speed))
 
+    def SetSolar(self, lat, lon, day_color, night_color, day_bri, night_bri):
+        self.calls.append(("SetSolar", lat, lon, day_color, night_color, day_bri, night_bri))
+
     def ApplyPreset(self, name):
         self.calls.append(("ApplyPreset", name))
 
     def GetState(self):
-        return json.dumps({"mode": "fixed", "color": "#00FFFF", "effect": "breathing", "brightness": 30})
+        return json.dumps({
+            "mode": "fixed", "color": "#00FFFF", "effect": "breathing", "brightness": 30,
+            "solar": {
+                "latitude": -23.55, "longitude": -46.63,
+                "day_color": "#8FF0A4", "night_color": "#FF7800",
+                "day_brightness": 50, "night_brightness": 20,
+            },
+        })
 
     def ListPresets(self):
         return json.dumps([
@@ -91,3 +101,18 @@ def test_client_is_available_when_daemon_down():
     proxy.GetState.side_effect = Exception("daemon not running")
     client = DaemonClient(proxy=proxy)
     assert client.is_available() is False
+
+
+def test_client_set_solar():
+    proxy = FakeProxy()
+    client = DaemonClient(proxy=proxy)
+    client.set_solar(-22.9, -43.2, "#FFFFFF", "#FF0000", 50, 10)
+    assert proxy.calls[-1] == ("SetSolar", -22.9, -43.2, "#FFFFFF", "#FF0000", 50, 10)
+
+
+def test_client_get_state_includes_solar():
+    proxy = FakeProxy()
+    client = DaemonClient(proxy=proxy)
+    state = client.get_state()
+    assert "solar" in state
+    assert state["solar"]["latitude"] == -23.55

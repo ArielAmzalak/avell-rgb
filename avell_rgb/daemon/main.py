@@ -163,6 +163,11 @@ def main() -> int:
             c = api.config
             self.StateChanged.emit(c.mode, c.color, c.brightness)
 
+        def SetSolar(self, lat: float, lon: float, day_color: str, night_color: str, day_bri: int, night_bri: int):
+            api.SetSolar(lat, lon, day_color, night_color, day_bri, night_bri)
+            c = api.config
+            self.StateChanged.emit(c.mode, c.color, c.brightness)
+
         def ApplyPreset(self, name: str):
             api.ApplyPreset(name)
             c = api.config
@@ -170,8 +175,8 @@ def main() -> int:
 
         def GetState(self) -> str:
             import json
-            m, c, e, b = api.GetState()
-            return json.dumps({"mode": m, "color": c, "effect": e, "brightness": b})
+            m, c, e, b, solar = api.GetState()
+            return json.dumps({"mode": m, "color": c, "effect": e, "brightness": b, "solar": solar})
 
         def ListPresets(self) -> str:
             import json

@@ -6,7 +6,7 @@ import asyncio
 from dataclasses import replace
 from typing import Callable
 
-from avell_rgb.state import Config, EffectConfig
+from avell_rgb.state import Config, EffectConfig, SolarConfig
 
 
 class DaemonDBusAPI:
@@ -42,6 +42,16 @@ class DaemonDBusAPI:
             effect=EffectConfig(name=name, color=color, speed=speed),
         )
 
+    def SetSolar(self, lat: float, lon: float, day_color: str, night_color: str, day_bri: int, night_bri: int) -> None:
+        self._update(
+            mode="solar",
+            solar=SolarConfig(
+                latitude=lat, longitude=lon,
+                day_color=day_color, night_color=night_color,
+                day_brightness=day_bri, night_brightness=night_bri,
+            ),
+        )
+
     def ApplyPreset(self, name: str) -> None:
         preset = self.config.presets[name]
         self._update(
@@ -50,12 +60,13 @@ class DaemonDBusAPI:
             brightness=preset.brightness,
         )
 
-    def GetState(self) -> tuple[str, str, str, int]:
+    def GetState(self) -> tuple:
         return (
             self.config.mode,
             self.config.color,
             self.config.effect.name,
             self.config.brightness,
+            self.config.solar.to_dict(),
         )
 
     def ListPresets(self) -> list[tuple[str, str, int]]:

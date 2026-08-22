@@ -99,6 +99,12 @@ class AvellWindow(Adw.ApplicationWindow):
         bri_row.add_suffix(self._brightness)
         self._color_group.add(bri_row)
 
+        apply_color_btn = Gtk.Button(label="Aplicar")
+        apply_color_btn.add_css_class("suggested-action")
+        apply_color_btn.set_margin_top(6)
+        apply_color_btn.connect("clicked", self._on_apply_color)
+        self._color_group.add(apply_color_btn)
+
         parent.append(self._color_group)
 
     def _build_effect_section(self, parent: Gtk.Box) -> None:
@@ -128,6 +134,12 @@ class AvellWindow(Adw.ApplicationWindow):
         self._effect_speed.connect("value-changed", self._on_effect_changed)
         speed_row.add_suffix(self._effect_speed)
         self._effect_group.add(speed_row)
+
+        apply_effect_btn = Gtk.Button(label="Aplicar")
+        apply_effect_btn.add_css_class("suggested-action")
+        apply_effect_btn.set_margin_top(6)
+        apply_effect_btn.connect("clicked", self._on_apply_effect)
+        self._effect_group.add(apply_effect_btn)
 
         parent.append(self._effect_group)
 
@@ -197,6 +209,28 @@ class AvellWindow(Adw.ApplicationWindow):
         night_row.add_suffix(self._solar_night_color)
         self._solar_group.add(night_row)
 
+        day_bri_row = Adw.ActionRow(title="Brilho de dia")
+        self._solar_day_bri = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 50, 1)
+        self._solar_day_bri.set_size_request(200, -1)
+        self._solar_day_bri.set_valign(Gtk.Align.CENTER)
+        self._solar_day_bri.set_draw_value(True)
+        day_bri_row.add_suffix(self._solar_day_bri)
+        self._solar_group.add(day_bri_row)
+
+        night_bri_row = Adw.ActionRow(title="Brilho de noite")
+        self._solar_night_bri = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 50, 1)
+        self._solar_night_bri.set_size_request(200, -1)
+        self._solar_night_bri.set_valign(Gtk.Align.CENTER)
+        self._solar_night_bri.set_draw_value(True)
+        night_bri_row.add_suffix(self._solar_night_bri)
+        self._solar_group.add(night_bri_row)
+
+        apply_solar_btn = Gtk.Button(label="Aplicar")
+        apply_solar_btn.add_css_class("suggested-action")
+        apply_solar_btn.set_margin_top(6)
+        apply_solar_btn.connect("clicked", self._on_apply_solar)
+        self._solar_group.add(apply_solar_btn)
+
         parent.append(self._solar_group)
 
     def _build_prefs_section(self, parent: Gtk.Box) -> None:
@@ -222,8 +256,10 @@ class AvellWindow(Adw.ApplicationWindow):
             color = state["color"]
             effect_name = state["effect"]
             brightness = state["brightness"]
+            solar = state.get("solar", {})
         except Exception:
             mode, color, effect_name, brightness = "fixed", "#808080", "breathing", 30
+            solar = {}
 
         for m, btn in self._mode_buttons.items():
             btn.set_active(m == mode)
@@ -234,6 +270,16 @@ class AvellWindow(Adw.ApplicationWindow):
             if name == effect_name:
                 self._effect_combo.set_selected(i)
                 break
+
+        if solar:
+            self._solar_lat.set_text(str(solar.get("latitude", "")))
+            self._solar_lon.set_text(str(solar.get("longitude", "")))
+            if solar.get("day_color"):
+                self._solar_day_color.set_rgba(hex_to_rgba(solar["day_color"]))
+            if solar.get("night_color"):
+                self._solar_night_color.set_rgba(hex_to_rgba(solar["night_color"]))
+            self._solar_day_bri.set_value(solar.get("day_brightness", 50))
+            self._solar_night_bri.set_value(solar.get("night_brightness", 20))
 
         self._update_section_visibility(mode)
         self._refresh_presets()
@@ -286,6 +332,40 @@ class AvellWindow(Adw.ApplicationWindow):
             self._client.set_effect(name, color, speed)
         except Exception:
             log.exception("failed to set effect")
+
+    def _on_apply_color(self, _btn) -> None:
+        color = rgba_to_hex(self._color_btn.get_rgba())
+        brightness = int(self._brightness.get_value())
+        try:
+            self._client.set_color(color, brightness)
+        except Exception:
+            log.exception("failed to apply color")
+
+    def _on_apply_effect(self, _btn) -> None:
+        idx = self._effect_combo.get_selected()
+        name = VALID_EFFECTS[idx]
+        color = rgba_to_hex(self._effect_color.get_rgba())
+        speed = int(self._effect_speed.get_value())
+        try:
+            self._client.set_effect(name, color, speed)
+        except Exception:
+            log.exception("failed to apply effect")
+
+    def _on_apply_solar(self, _btn) -> None:
+        try:
+            lat = float(self._solar_lat.get_text())
+            lon = float(self._solar_lon.get_text())
+        except ValueError:
+            log.warning("invalid latitude/longitude values")
+            return
+        day_color = rgba_to_hex(self._solar_day_color.get_rgba())
+        night_color = rgba_to_hex(self._solar_night_color.get_rgba())
+        day_bri = int(self._solar_day_bri.get_value())
+        night_bri = int(self._solar_night_bri.get_value())
+        try:
+            self._client.set_solar(lat, lon, day_color, night_color, day_bri, night_bri)
+        except Exception:
+            log.exception("failed to apply solar config")
 
     def _on_preset_apply(self, _btn, name: str) -> None:
         try:

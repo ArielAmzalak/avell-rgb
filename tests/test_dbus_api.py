@@ -91,7 +91,7 @@ def test_get_state():
     writer = FakeConfigWriter()
     event = asyncio.Event()
     api = DaemonDBusAPI(cfg, writer, event)
-    mode, color, effect_name, brightness = api.GetState()
+    mode, color, effect_name, brightness, solar = api.GetState()
     assert mode == "effect"
     assert color == "#00FFFF"
     assert effect_name == "wave"
@@ -110,3 +110,33 @@ def test_list_presets():
     names = [r[0] for r in result]
     assert "work" in names
     assert "night" in names
+
+
+def test_set_solar():
+    cfg = _cfg()
+    writer = FakeConfigWriter()
+    event = asyncio.Event()
+    api = DaemonDBusAPI(cfg, writer, event)
+    api.SetSolar(-22.9, -43.2, "#FFFFFF", "#FF0000", 50, 10)
+    assert api.config.mode == "solar"
+    assert api.config.solar.latitude == -22.9
+    assert api.config.solar.longitude == -43.2
+    assert api.config.solar.day_color == "#FFFFFF"
+    assert api.config.solar.night_color == "#FF0000"
+    assert api.config.solar.day_brightness == 50
+    assert api.config.solar.night_brightness == 10
+    assert writer.saved is not None
+    assert event.is_set()
+
+
+def test_get_state_includes_solar():
+    solar = SolarConfig(-23.55, -46.63, "#8FF0A4", "#FF7800", 50, 20)
+    cfg = _cfg(solar=solar)
+    writer = FakeConfigWriter()
+    event = asyncio.Event()
+    api = DaemonDBusAPI(cfg, writer, event)
+    result = api.GetState()
+    assert len(result) == 5
+    mode, color, effect_name, brightness, solar_dict = result
+    assert solar_dict["latitude"] == -23.55
+    assert solar_dict["day_color"] == "#8FF0A4"

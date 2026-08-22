@@ -27,6 +27,9 @@ class DaemonClient:
     def set_effect(self, name: str, color: str, speed: int) -> None:
         self._proxy.SetEffect(name, color, speed)
 
+    def set_solar(self, lat: float, lon: float, day_color: str, night_color: str, day_bri: int, night_bri: int) -> None:
+        self._proxy.SetSolar(lat, lon, day_color, night_color, day_bri, night_bri)
+
     def apply_preset(self, name: str) -> None:
         self._proxy.ApplyPreset(name)
 
