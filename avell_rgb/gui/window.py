@@ -23,7 +23,7 @@ from avell_rgb.dbus_client import DaemonClient
 from avell_rgb.gui.color_helpers import hex_to_rgba, rgba_to_hex
 from avell_rgb.gui.preview import LaptopPreview
 from avell_rgb.gui.style import SWATCHES
-from avell_rgb.state import VALID_EFFECTS
+from avell_rgb.state import VALID_EFFECTS, kb_to_lb_brightness
 
 log = logging.getLogger("avell_rgb.gui.window")
 
@@ -187,6 +187,9 @@ class AvellWindow(Adw.ApplicationWindow):
         self._client = client
         self._suppress = False
         self._pending: dict[str, int] = {}
+        self._ext_reload_id: int | None = None
+        self._signal_connected = False
+        self._connect_signal()
 
         self.set_default_size(660, 940)
         self.set_title("Avell RGB")
@@ -219,7 +222,9 @@ class AvellWindow(Adw.ApplicationWindow):
         content_wrap = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         content_wrap.append(self._banner)
         content_wrap.append(scroll)
-        toolbar.set_content(content_wrap)
+        self._toast_overlay = Adw.ToastOverlay()
+        self._toast_overlay.set_child(content_wrap)
+        toolbar.set_content(self._toast_overlay)
 
         clamp = Adw.Clamp(maximum_size=620)
         scroll.set_child(clamp)
@@ -264,11 +269,17 @@ class AvellWindow(Adw.ApplicationWindow):
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=18)
         row.set_halign(Gtk.Align.CENTER)
         self._status_labels: dict[str, Gtk.Label] = {}
+        self._status_providers: dict[str, Gtk.CssProvider] = {}
         for key, name in (("daemon", "Daemon"), ("keyboard", "Teclado"), ("lightbar", "Barra LED")):
             lbl = Gtk.Label(label=f"● {name}")
             lbl.add_css_class("status-dot")
+            provider = Gtk.CssProvider()
+            lbl.get_style_context().add_provider(
+                provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+            )
             row.append(lbl)
             self._status_labels[key] = lbl
+            self._status_providers[key] = provider
         return row
 
     def _build_mode_pills(self) -> Gtk.Widget:
@@ -475,11 +486,21 @@ class AvellWindow(Adw.ApplicationWindow):
 
     # ---------- state loading ----------
 
+    def _connect_signal(self) -> None:
+        if self._signal_connected:
+            return
+        try:
+            self._client.connect_state_changed(self._on_daemon_state)
+            self._signal_connected = True
+        except Exception:
+            log.debug("could not connect StateChanged signal")
+
     def _load_state(self) -> None:
         self._suppress = True
         state: dict = {}
         try:
             state = self._client.get_state()
+            self._connect_signal()
             self._banner.set_revealed(False)
         except Exception:
             log.warning("daemon unavailable; using defaults")
@@ -501,7 +522,7 @@ class AvellWindow(Adw.ApplicationWindow):
         self._kb_ctl.set(state.get("keyboard_color", color),
                          state.get("keyboard_brightness", brightness))
         self._lb_ctl.set(state.get("lightbar_color", color),
-                         state.get("lightbar_brightness", min(100, brightness * 2)))
+                         state.get("lightbar_brightness", kb_to_lb_brightness(brightness)))
         self._sync_switch.set_active(not independent)
         self._fixed_stack.set_visible_child_name("split" if independent else "synced")
 
@@ -528,15 +549,16 @@ class AvellWindow(Adw.ApplicationWindow):
         self._sync_preview()
 
     def _refresh_status(self) -> None:
-        import shutil
         from pathlib import Path
+
+        from avell_rgb.backends.keyboard import _find_binary
 
         daemon_ok = False
         try:
             daemon_ok = self._client.is_available()
         except Exception:
             pass
-        kb_ok = shutil.which("ite8291r3-ctl") is not None
+        kb_ok = _find_binary() is not None
         lb = Path("/sys/class/leds/rgb:lightbar")
         lb_ok = (lb / "brightness").exists()
 
@@ -544,7 +566,22 @@ class AvellWindow(Adw.ApplicationWindow):
             lbl = self._status_labels[key]
             name = {"daemon": "Daemon", "keyboard": "Teclado", "lightbar": "Barra LED"}[key]
             lbl.set_label(f"● {name}")
-            _paint(lbl, "label { color: %s; }" % ("#2EC27E" if ok else "#FF6B6B"))
+            css = "label { color: %s; }" % ("#2EC27E" if ok else "#FF6B6B")
+            self._status_providers[key].load_from_data(css.encode())
+
+    def _on_daemon_state(self, _mode, _color, _brightness) -> None:
+        if self._pending:
+            return
+        if self._ext_reload_id is not None:
+            return
+
+        def reload():
+            self._ext_reload_id = None
+            if not self._pending:
+                self._load_state()
+            return GLib.SOURCE_REMOVE
+
+        self._ext_reload_id = GLib.timeout_add(200, reload)
 
     # ---------- preview ----------
 
@@ -566,7 +603,7 @@ class AvellWindow(Adw.ApplicationWindow):
         else:  # fixed
             if self._sync_switch.get_active():
                 c, b = self._synced_ctl.hex, self._synced_ctl.bri
-                self._preview.set_static(c, b / 50, c, min(100, b * 2) / 100)
+                self._preview.set_static(c, b / 50, c, kb_to_lb_brightness(b) / 100)
             else:
                 self._preview.set_static(
                     self._kb_ctl.hex, self._kb_ctl.bri / 50,
@@ -651,7 +688,7 @@ class AvellWindow(Adw.ApplicationWindow):
             # of overwriting them with a copy of the synced color.
             c, b = self._synced_ctl.hex, self._synced_ctl.bri
             kb_c, kb_b = c, b
-            lb_c, lb_b = c, min(100, b * 2)
+            lb_c, lb_b = c, kb_to_lb_brightness(b)
             try:
                 state = self._client.get_state()
                 if state.get("keyboard_color"):
@@ -795,12 +832,17 @@ class AvellWindow(Adw.ApplicationWindow):
             self._presets_flow.append(chip)
 
     def _on_preset_clicked(self, _g, _n, _x, _y, name: str) -> None:
+        was_independent = not self._sync_switch.get_active()
         try:
             self._client.apply_preset(name)
         except Exception:
             log.exception("failed to apply preset")
             return
         self._load_state()
+        if was_independent and self._sync_switch.get_active():
+            self._toast_overlay.add_toast(
+                Adw.Toast(title="Preset sincronizado aplicado — modo separado desativado")
+            )
 
     def _on_save_preset(self, _btn) -> None:
         dialog = Adw.AlertDialog(
@@ -809,6 +851,7 @@ class AvellWindow(Adw.ApplicationWindow):
         )
         entry = Gtk.Entry(placeholder_text="Nome do preset")
         entry.set_margin_top(6)
+        entry.set_activates_default(True)
         dialog.set_extra_child(entry)
         dialog.add_response("cancel", "Cancelar")
         dialog.add_response("save", "Salvar")
@@ -829,7 +872,6 @@ class AvellWindow(Adw.ApplicationWindow):
             self._refresh_presets()
 
         dialog.connect("response", on_response)
-        entry.connect("activate", lambda *_: dialog.close())
         dialog.present(self)
 
     def _on_delete_preset(self, _btn, name: str) -> None:
@@ -884,4 +926,15 @@ class AvellWindow(Adw.ApplicationWindow):
             )
         except FileNotFoundError:
             return
-        GLib.timeout_add(800, lambda: (self._load_state(), GLib.SOURCE_REMOVE)[1])
+        attempts = [0]
+
+        def poll():
+            attempts[0] += 1
+            if self._client.is_available():
+                self._load_state()
+                return GLib.SOURCE_REMOVE
+            if attempts[0] >= 6:
+                return GLib.SOURCE_REMOVE
+            return GLib.SOURCE_CONTINUE
+
+        GLib.timeout_add(800, poll)

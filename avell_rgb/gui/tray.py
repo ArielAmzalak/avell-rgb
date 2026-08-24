@@ -104,6 +104,7 @@ class TrayIcon:
         presets_item = Gtk3.MenuItem.new_with_label("Presets")
         self._presets_sub = Gtk3.Menu()
         presets_item.set_submenu(self._presets_sub)
+        presets_item.connect("activate", lambda _: self._rebuild_presets_menu())
         menu.append(presets_item)
         self._rebuild_presets_menu()
 

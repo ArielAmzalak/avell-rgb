@@ -18,6 +18,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk
 
 from avell_rgb import lightbar_fx
+from avell_rgb.lightbar_fx import _hash01
 
 # Simplified ANSI-ish key layout: rows of relative key widths.
 _ROWS: tuple[tuple[float, ...], ...] = (
@@ -35,11 +36,6 @@ _TICK_MS = 40  # 25 fps
 def _hex_to_rgbf(h: str) -> tuple[float, float, float]:
     h = h.lstrip("#")
     return (int(h[0:2], 16) / 255, int(h[2:4], 16) / 255, int(h[4:6], 16) / 255)
-
-
-def _hash01(a: float, b: float) -> float:
-    """Deterministic pseudo-random in [0,1) from two floats."""
-    return (math.sin(a * 12.9898 + b * 78.233) * 43758.5453) % 1.0
 
 
 def _rounded_rect(cr, x: float, y: float, w: float, h: float, r: float) -> None:

@@ -17,6 +17,7 @@ def _run_tray() -> int:
 
     import gi
     gi.require_version("Gtk", "3.0")
+    from gi.repository import GLib
     from gi.repository import Gtk as Gtk3
 
     from avell_rgb.dbus_client import DaemonClient
@@ -36,11 +37,43 @@ def _run_tray() -> int:
         on_quit=Gtk3.main_quit,
     )
 
-    try:
-        state = client.get_state()
+    def on_state_changed(mode, color, brightness):
+        def apply_state():
+            tray.update_state(mode, color, brightness)
+            tray._rebuild_presets_menu()
+            return False
+
+        GLib.idle_add(apply_state)
+
+    signal_connected = False
+
+    def connect_signal():
+        nonlocal signal_connected
+        if signal_connected:
+            return
+        try:
+            client.connect_state_changed(on_state_changed)
+            signal_connected = True
+        except Exception:
+            pass
+
+    connect_signal()
+
+    attempts = 0
+
+    def poll_initial_state():
+        nonlocal attempts
+        attempts += 1
+        try:
+            state = client.get_state()
+        except Exception:
+            return attempts < 15
         tray.update_state(state["mode"], state["color"], state["brightness"])
-    except Exception:
-        pass
+        connect_signal()
+        return False
+
+    if poll_initial_state():
+        GLib.timeout_add(1000, poll_initial_state)
 
     Gtk3.main()
     return 0
