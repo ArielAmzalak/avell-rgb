@@ -6,7 +6,7 @@ from datetime import datetime
 
 from astral import LocationInfo, sun
 
-from avell_rgb.state import SolarConfig
+from avell_rgb.state import SolarConfig, kb_to_lb_brightness
 
 
 def hex_to_rgb(h: str) -> tuple[int, int, int]:
@@ -49,7 +49,7 @@ def interpolate_solar(cfg: SolarConfig, now: datetime) -> tuple[str, int, int]:
     raw_brightness = round(
         cfg.night_brightness + (cfg.day_brightness - cfg.night_brightness) * t
     )
-    kb_brightness = min(50, raw_brightness)
-    lb_brightness = min(100, raw_brightness * 2)
+    kb_brightness = max(0, min(50, raw_brightness))
+    lb_brightness = max(0, kb_to_lb_brightness(raw_brightness))
 
     return (blended_hex, kb_brightness, lb_brightness)

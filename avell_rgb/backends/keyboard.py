@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import subprocess
+from pathlib import Path
 from typing import Optional
 
 log = logging.getLogger(__name__)
 
 BINARY = "ite8291r3-ctl"
+TIMEOUT = 5
 
 # ite8291r3-ctl effect -c only accepts these palette names, not hex colors.
 # Canonical RGB anchors used to map an arbitrary hex color to the nearest
@@ -41,6 +44,17 @@ _EFFECT_CAPS: dict[str, frozenset[str]] = {
 }
 
 
+def _find_binary() -> Optional[str]:
+    """Locate the CLI on PATH, falling back to ~/.local/bin."""
+    found = shutil.which(BINARY)
+    if found:
+        return found
+    fallback = Path.home() / ".local" / "bin" / BINARY
+    if fallback.is_file() and os.access(fallback, os.X_OK):
+        return str(fallback)
+    return None
+
+
 def _resolve_effect_color(color: str) -> str:
     """Accept a palette name verbatim or map #RRGGBB to the nearest palette."""
     if color in _EFFECT_PALETTE_PASSTHROUGH:
@@ -65,7 +79,7 @@ def _resolve_effect_color(color: str) -> str:
 
 class KeyboardBackend:
     def available(self) -> bool:
-        return shutil.which(BINARY) is not None
+        return _find_binary() is not None
 
     def apply_solid(self, rgb: tuple[int, int, int], brightness: int) -> None:
         rgb_str = "{},{},{}".format(*rgb)
@@ -77,7 +91,6 @@ class KeyboardBackend:
         effect: str,
         color: str,
         speed: int,
-        direction: Optional[str],
         brightness: int,
     ) -> None:
         caps = _EFFECT_CAPS.get(effect, frozenset({"color", "speed", "brightness"}))
@@ -88,8 +101,6 @@ class KeyboardBackend:
             cmd.extend(["-s", str(speed)])
         if "brightness" in caps:
             cmd.extend(["-b", str(brightness)])
-        if direction is not None and "speed" in caps:
-            cmd.extend(["-d", direction])
         self._run(cmd)
 
     def off(self) -> None:
@@ -97,9 +108,16 @@ class KeyboardBackend:
 
     def _run(self, cmd: list[str]) -> None:
         log.info("apply: %s", " ".join(cmd[1:]))
+        cmd = [_find_binary() or BINARY, *cmd[1:]]
         try:
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
+            subprocess.run(
+                cmd, check=True, capture_output=True, text=True, timeout=TIMEOUT
+            )
         except FileNotFoundError:
             log.warning("ite8291r3-ctl not found; keyboard command skipped")
+        except subprocess.TimeoutExpired:
+            log.warning(
+                "ite8291r3-ctl timed out after %ds; keyboard command skipped", TIMEOUT
+            )
         except subprocess.CalledProcessError as e:
             log.warning("ite8291r3-ctl exited %d: %s", e.returncode, e.stderr or "")

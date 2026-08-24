@@ -50,6 +50,11 @@ class DaemonClient:
         result = self._proxy.ListPresets()
         return json.loads(result)
 
+    def connect_state_changed(self, callback) -> None:
+        """Connect callback(mode: str, color: str, brightness: int) to the
+        daemon's StateChanged signal. Raises if the daemon is unavailable."""
+        self._proxy.StateChanged.connect(callback)
+
     def is_available(self) -> bool:
         try:
             self._proxy.GetState()

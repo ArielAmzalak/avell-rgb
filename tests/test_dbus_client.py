@@ -7,9 +7,18 @@ import pytest
 from avell_rgb.dbus_client import DaemonClient
 
 
+class FakeSignal:
+    def __init__(self):
+        self.callbacks = []
+
+    def connect(self, callback):
+        self.callbacks.append(callback)
+
+
 class FakeProxy:
     def __init__(self):
         self.calls = []
+        self.StateChanged = FakeSignal()
 
     def SetMode(self, mode):
         self.calls.append(("SetMode", mode))
@@ -154,3 +163,25 @@ def test_client_get_state_includes_solar():
     state = client.get_state()
     assert "solar" in state
     assert state["solar"]["latitude"] == -23.55
+
+
+def test_client_connect_state_changed():
+    proxy = FakeProxy()
+    client = DaemonClient(proxy=proxy)
+
+    def callback(mode, color, brightness):
+        pass
+
+    client.connect_state_changed(callback)
+    assert proxy.StateChanged.callbacks == [callback]
+
+
+def test_client_connect_state_changed_propagates_when_daemon_down():
+    class DownProxy:
+        @property
+        def StateChanged(self):
+            raise RuntimeError("daemon not running")
+
+    client = DaemonClient(proxy=DownProxy())
+    with pytest.raises(RuntimeError):
+        client.connect_state_changed(lambda mode, color, brightness: None)

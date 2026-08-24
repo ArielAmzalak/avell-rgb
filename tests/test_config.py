@@ -34,11 +34,52 @@ def test_load_missing_file_returns_default(tmp_path):
     assert path.exists()
 
 
-def test_load_malformed_json_raises(tmp_path):
-    path = tmp_path / "bad.json"
+def test_load_malformed_json_falls_back_to_default(tmp_path):
+    path = tmp_path / "config.json"
     path.write_text("{not json")
-    with pytest.raises(json.JSONDecodeError):
-        load_config(path)
+    loaded = load_config(path)
+    assert loaded == DEFAULT_CONFIG
+    bak = tmp_path / "config.json.bak"
+    assert bak.exists()
+    assert bak.read_text() == "{not json"
+    assert load_config(path) == DEFAULT_CONFIG  # path rewritten with defaults
+    assert json.loads(path.read_text())["version"] == 2
+
+
+def test_load_non_dict_root_falls_back_to_default(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text("[1, 2, 3]")
+    loaded = load_config(path)
+    assert loaded == DEFAULT_CONFIG
+    assert (tmp_path / "config.json.bak").exists()
+
+
+def test_load_missing_keys_falls_back_to_default(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"version": 2, "mode": "fixed"}))
+    loaded = load_config(path)
+    assert loaded == DEFAULT_CONFIG
+    assert (tmp_path / "config.json.bak").exists()
+
+
+def test_load_invalid_mode_falls_back_to_default(tmp_path):
+    path = tmp_path / "config.json"
+    data = DEFAULT_CONFIG.to_dict()
+    data["mode"] = "disco"
+    path.write_text(json.dumps(data))
+    loaded = load_config(path)
+    assert loaded == DEFAULT_CONFIG
+    assert (tmp_path / "config.json.bak").exists()
+
+
+def test_load_corrupt_overwrites_previous_bak(tmp_path):
+    path = tmp_path / "config.json"
+    bak = tmp_path / "config.json.bak"
+    bak.write_text("old backup")
+    path.write_text("{broken")
+    loaded = load_config(path)
+    assert loaded == DEFAULT_CONFIG
+    assert bak.read_text() == "{broken"
 
 
 def test_save_is_human_readable(tmp_path):

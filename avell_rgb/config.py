@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 
-from avell_rgb.state import Config, EffectConfig, Preset, SolarConfig
+from avell_rgb.state import Config, EffectConfig, Preset, SolarConfig, kb_to_lb_brightness
+
+log = logging.getLogger(__name__)
 
 
 def _config_dir() -> Path:
@@ -84,7 +87,7 @@ def migrate_v1_to_v2(d: dict) -> dict:
         "keyboard_color": color,
         "keyboard_brightness": brightness,
         "lightbar_color": color,
-        "lightbar_brightness": min(100, brightness * 2),
+        "lightbar_brightness": kb_to_lb_brightness(brightness),
         "effect": {"name": "breathing", "color": color, "speed": 5},
         "solar": solar,
         "presets": presets,
@@ -96,13 +99,20 @@ def load_config(path: Path = CONFIG_PATH) -> Config:
         save_config(DEFAULT_CONFIG, path)
         return DEFAULT_CONFIG
     text = path.read_text()
-    data = json.loads(text)
-    if data.get("version", 1) < 2:
-        data = migrate_v1_to_v2(data)
-        cfg = Config.from_dict(data)
-        save_config(cfg, path)
-        return cfg
-    return Config.from_dict(data)
+    try:
+        data = json.loads(text)
+        if data.get("version", 1) < 2:
+            data = migrate_v1_to_v2(data)
+            cfg = Config.from_dict(data)
+            save_config(cfg, path)
+            return cfg
+        return Config.from_dict(data)
+    except (json.JSONDecodeError, KeyError, ValueError, TypeError, AttributeError) as exc:
+        bak = path.with_name(path.name + ".bak")
+        path.replace(bak)
+        log.error("invalid config %s (%s); backed up to %s, using defaults", path, exc, bak)
+        save_config(DEFAULT_CONFIG, path)
+        return DEFAULT_CONFIG
 
 
 def save_config(config: Config, path: Path = CONFIG_PATH) -> None:

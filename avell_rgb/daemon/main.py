@@ -1,5 +1,6 @@
 """Daemon: computes desired state and applies via backends."""
 
+import json
 import logging
 import math
 import sys
@@ -7,10 +8,13 @@ import time
 from datetime import datetime, timezone
 from typing import Callable, Optional, Protocol
 
+from dasbus.server.interface import dbus_interface, dbus_signal
+from dasbus.typing import Int, Str
+
 from avell_rgb import lightbar_fx
 from avell_rgb.config import load_config, save_config
-from avell_rgb.solar import interpolate_solar
-from avell_rgb.state import Config
+from avell_rgb.solar import hex_to_rgb, interpolate_solar
+from avell_rgb.state import Config, kb_to_lb_brightness
 
 # Software animation rate for the lightbar (sysfs writes; keep gentle).
 ANIM_TICK_SECONDS = 0.05
@@ -22,8 +26,7 @@ class KeyboardProto(Protocol):
     def available(self) -> bool: ...
     def apply_solid(self, rgb: tuple[int, int, int], brightness: int) -> None: ...
     def apply_effect(
-        self, effect: str, color: str, speed: int,
-        direction: Optional[str], brightness: int,
+        self, effect: str, color: str, speed: int, brightness: int,
     ) -> None: ...
     def off(self) -> None: ...
 
@@ -32,11 +35,6 @@ class LightbarProto(Protocol):
     def available(self) -> bool: ...
     def apply(self, rgb: tuple[int, int, int], brightness: int) -> None: ...
     def off(self) -> None: ...
-
-
-def _hex_to_rgb(h: str) -> tuple[int, int, int]:
-    h = h.lstrip("#")
-    return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
 
 
 class DaemonCore:
@@ -59,6 +57,8 @@ class DaemonCore:
         self.mono = mono
         self._anim_start: Optional[float] = None
         self._last_frame: Optional[tuple] = None
+        self._kb_available: Optional[bool] = None
+        self._lb_available: Optional[bool] = None
 
     def apply_current(self) -> None:
         mode = self.config.mode
@@ -77,10 +77,10 @@ class DaemonCore:
     def _apply_fixed(self) -> None:
         kb_color, kb_bri, lb_color, lb_bri = self.config.resolved_colors()
         self._safe_kb(
-            lambda: self.keyboard.apply_solid(_hex_to_rgb(kb_color), kb_bri)
+            lambda: self.keyboard.apply_solid(hex_to_rgb(kb_color), kb_bri)
         )
         self._safe_lb(
-            lambda: self.lightbar.apply(_hex_to_rgb(lb_color), lb_bri)
+            lambda: self.lightbar.apply(hex_to_rgb(lb_color), lb_bri)
         )
 
     def _apply_effect(self) -> None:
@@ -88,7 +88,7 @@ class DaemonCore:
         self._safe_kb(
             lambda: self.keyboard.apply_effect(
                 effect=eff.name, color=eff.color,
-                speed=eff.speed, direction=None, brightness=eff.brightness,
+                speed=eff.speed, brightness=eff.brightness,
             )
         )
         self._anim_start = self.mono()
@@ -106,10 +106,15 @@ class DaemonCore:
             return
         eff = self.config.effect
         t = self.mono() - self._anim_start
-        rgb, bri = lightbar_fx.frame(
-            eff.name, _hex_to_rgb(eff.color), eff.speed,
-            min(100, eff.brightness * 2), t,
-        )
+        try:
+            rgb, bri = lightbar_fx.frame(
+                eff.name, hex_to_rgb(eff.color), eff.speed,
+                kb_to_lb_brightness(eff.brightness), t,
+            )
+        except Exception:
+            log.exception("animation frame failed; disabling animation")
+            self._anim_start = None
+            return
         new_frame = (rgb, bri)
         if new_frame == self._last_frame:
             return
@@ -119,10 +124,10 @@ class DaemonCore:
     def _apply_solar(self) -> None:
         color, kb_bri, lb_bri = interpolate_solar(self.config.solar, self.clock())
         self._safe_kb(
-            lambda: self.keyboard.apply_solid(_hex_to_rgb(color), kb_bri)
+            lambda: self.keyboard.apply_solid(hex_to_rgb(color), kb_bri)
         )
         self._safe_lb(
-            lambda: self.lightbar.apply(_hex_to_rgb(color), lb_bri)
+            lambda: self.lightbar.apply(hex_to_rgb(color), lb_bri)
         )
 
     def sleep_seconds(self) -> float:
@@ -131,22 +136,88 @@ class DaemonCore:
         return math.inf
 
     def _safe_kb(self, fn) -> None:
-        if not self.keyboard.available():
-            log.debug("keyboard backend unavailable")
+        avail = self.keyboard.available()
+        prev = self._kb_available
+        self._kb_available = avail
+        if not avail:
+            if prev is not False:
+                log.warning("keyboard backend unavailable")
             return
+        if prev is False:
+            log.info("keyboard backend available again")
         try:
             fn()
         except Exception:
             log.exception("keyboard backend error")
 
     def _safe_lb(self, fn) -> None:
-        if not self.lightbar.available():
-            log.debug("lightbar backend unavailable")
+        avail = self.lightbar.available()
+        prev = self._lb_available
+        self._lb_available = avail
+        if not avail:
+            if prev is not False:
+                log.warning("lightbar backend unavailable")
             return
+        if prev is False:
+            log.info("lightbar backend available again")
         try:
             fn()
         except Exception:
             log.exception("lightbar backend error")
+
+
+@dbus_interface("io.github.avellrgb.Daemon")
+class DBusAdapter(object):
+    """Exports the daemon API on D-Bus; delegates to a DaemonDBusAPI."""
+
+    def __init__(self, api):
+        self._api = api
+
+    @dbus_signal
+    def StateChanged(self, mode: Str, color: Str, brightness: Int):
+        """Notification that state changed; receivers should call GetState."""
+
+    def SetMode(self, mode: str):
+        self._api.SetMode(mode)
+        c = self._api.config
+        self.StateChanged.emit(c.mode, c.color, c.brightness)
+
+    def SetColor(self, hex_color: str, brightness: int):
+        self._api.SetColor(hex_color, brightness)
+        c = self._api.config
+        self.StateChanged.emit(c.mode, c.color, c.brightness)
+
+    def SetDeviceColor(self, device: str, hex_color: str, brightness: int):
+        self._api.SetDeviceColor(device, hex_color, brightness)
+        c = self._api.config
+        self.StateChanged.emit(c.mode, c.color, c.brightness)
+
+    def SetEffect(self, name: str, color: str, speed: int, brightness: int):
+        self._api.SetEffect(name, color, speed, brightness)
+        c = self._api.config
+        self.StateChanged.emit(c.mode, c.color, c.brightness)
+
+    def SetSolar(self, lat: float, lon: float, day_color: str, night_color: str, day_bri: int, night_bri: int):
+        self._api.SetSolar(lat, lon, day_color, night_color, day_bri, night_bri)
+        c = self._api.config
+        self.StateChanged.emit(c.mode, c.color, c.brightness)
+
+    def ApplyPreset(self, name: str):
+        self._api.ApplyPreset(name)
+        c = self._api.config
+        self.StateChanged.emit(c.mode, c.color, c.brightness)
+
+    def SavePreset(self, name: str):
+        self._api.SavePreset(name)
+
+    def DeletePreset(self, name: str):
+        self._api.DeletePreset(name)
+
+    def GetState(self) -> str:
+        return json.dumps(self._api.GetState())
+
+    def ListPresets(self) -> str:
+        return json.dumps(self._api.ListPresets())
 
 
 def main() -> int:
@@ -159,8 +230,6 @@ def main() -> int:
     from avell_rgb.daemon.dbus_api import DaemonDBusAPI
 
     from dasbus.connection import SessionMessageBus
-    from dasbus.server.interface import dbus_interface
-    from dasbus.signal import Signal
 
     logging.basicConfig(
         level=logging.INFO,
@@ -175,57 +244,8 @@ def main() -> int:
 
     api = DaemonDBusAPI(config, persist, wakeup)
 
-    @dbus_interface("io.github.avellrgb.Daemon")
-    class DBusAdapter(object):
-        def __init__(self):
-            self.StateChanged = Signal()
-
-        def SetMode(self, mode: str):
-            api.SetMode(mode)
-            c = api.config
-            self.StateChanged.emit(c.mode, c.color, c.brightness)
-
-        def SetColor(self, hex_color: str, brightness: int):
-            api.SetColor(hex_color, brightness)
-            c = api.config
-            self.StateChanged.emit(c.mode, c.color, c.brightness)
-
-        def SetDeviceColor(self, device: str, hex_color: str, brightness: int):
-            api.SetDeviceColor(device, hex_color, brightness)
-            c = api.config
-            self.StateChanged.emit(c.mode, c.keyboard_color, c.keyboard_brightness)
-
-        def SetEffect(self, name: str, color: str, speed: int, brightness: int):
-            api.SetEffect(name, color, speed, brightness)
-            c = api.config
-            self.StateChanged.emit(c.mode, c.color, c.brightness)
-
-        def SetSolar(self, lat: float, lon: float, day_color: str, night_color: str, day_bri: int, night_bri: int):
-            api.SetSolar(lat, lon, day_color, night_color, day_bri, night_bri)
-            c = api.config
-            self.StateChanged.emit(c.mode, c.color, c.brightness)
-
-        def ApplyPreset(self, name: str):
-            api.ApplyPreset(name)
-            c = api.config
-            self.StateChanged.emit(c.mode, c.color, c.brightness)
-
-        def SavePreset(self, name: str):
-            api.SavePreset(name)
-
-        def DeletePreset(self, name: str):
-            api.DeletePreset(name)
-
-        def GetState(self) -> str:
-            import json
-            return json.dumps(api.GetState())
-
-        def ListPresets(self) -> str:
-            import json
-            return json.dumps(api.ListPresets())
-
     bus = SessionMessageBus()
-    adapter = DBusAdapter()
+    adapter = DBusAdapter(api)
 
     bus.publish_object("/io/github/avellrgb/Daemon", adapter)
     bus.register_service("io.github.avellrgb.Daemon")
@@ -251,9 +271,13 @@ def main() -> int:
 
         while True:
             core.config = api.config
-            core.apply_current()
-            log.info("applied mode=%s color=%s bri=%d",
-                     core.config.mode, core.config.color, core.config.brightness)
+            try:
+                core.apply_current()
+            except Exception:
+                log.exception("apply_current failed")
+            else:
+                log.info("applied mode=%s color=%s bri=%d",
+                         core.config.mode, core.config.color, core.config.brightness)
 
             delay = core.sleep_seconds()
             wakeup.clear()

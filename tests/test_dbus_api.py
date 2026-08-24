@@ -118,9 +118,10 @@ def test_apply_preset_independent():
 
 
 def test_apply_preset_unknown_raises():
-    api, _, _ = _api()
-    with pytest.raises(KeyError):
+    api, writer, _ = _api()
+    with pytest.raises(ValueError, match="unknown preset"):
         api.ApplyPreset("nonexistent")
+    assert writer.saved is None
 
 
 def test_save_preset_synced():
@@ -201,6 +202,113 @@ def test_list_presets():
     assert "work" in names
     assert "night" in names
     assert result[0]["color"] == "#00FFFF"
+
+
+def test_set_mode_invalid_raises():
+    api, writer, event = _api()
+    with pytest.raises(ValueError):
+        api.SetMode("disco")
+    assert api.config.mode == "fixed"
+    assert writer.saved is None
+    assert not event.is_set()
+
+
+@pytest.mark.parametrize("color", ["FF0000", "#FF00", "#GGGGGG", "red", "#FF00001"])
+def test_set_color_invalid_hex_raises(color):
+    api, writer, _ = _api()
+    with pytest.raises(ValueError):
+        api.SetColor(color, 30)
+    assert writer.saved is None
+
+
+@pytest.mark.parametrize("brightness", [-1, 51])
+def test_set_color_brightness_out_of_range_raises(brightness):
+    api, writer, _ = _api()
+    with pytest.raises(ValueError):
+        api.SetColor("#FF0000", brightness)
+    assert writer.saved is None
+
+
+def test_set_device_color_invalid_hex_raises():
+    api, writer, _ = _api()
+    with pytest.raises(ValueError):
+        api.SetDeviceColor("keyboard", "nope", 30)
+    assert writer.saved is None
+
+
+@pytest.mark.parametrize("device,brightness", [
+    ("keyboard", -1),
+    ("keyboard", 51),
+    ("lightbar", -1),
+    ("lightbar", 101),
+])
+def test_set_device_color_brightness_out_of_range_raises(device, brightness):
+    api, writer, _ = _api()
+    with pytest.raises(ValueError):
+        api.SetDeviceColor(device, "#FF0000", brightness)
+    assert writer.saved is None
+
+
+def test_set_device_color_lightbar_allows_100():
+    api, writer, _ = _api()
+    api.SetDeviceColor("lightbar", "#FF0000", 100)
+    assert api.config.lightbar_brightness == 100
+    assert writer.saved is not None
+
+
+def test_set_effect_invalid_name_raises():
+    api, writer, _ = _api()
+    with pytest.raises(ValueError):
+        api.SetEffect("strobe", "#00FF00", 5, 25)
+    assert writer.saved is None
+
+
+def test_set_effect_invalid_hex_raises():
+    api, writer, _ = _api()
+    with pytest.raises(ValueError):
+        api.SetEffect("wave", "green", 5, 25)
+    assert writer.saved is None
+
+
+@pytest.mark.parametrize("speed", [-1, 11])
+def test_set_effect_speed_out_of_range_raises(speed):
+    api, writer, _ = _api()
+    with pytest.raises(ValueError):
+        api.SetEffect("wave", "#00FF00", speed, 25)
+    assert writer.saved is None
+
+
+@pytest.mark.parametrize("brightness", [-1, 51])
+def test_set_effect_brightness_out_of_range_raises(brightness):
+    api, writer, _ = _api()
+    with pytest.raises(ValueError):
+        api.SetEffect("wave", "#00FF00", 5, brightness)
+    assert writer.saved is None
+
+
+@pytest.mark.parametrize("kwargs", [
+    dict(lat=90.5),
+    dict(lat=-90.5),
+    dict(lon=180.5),
+    dict(lon=-180.5),
+    dict(day_color="#FFF"),
+    dict(night_color="black"),
+    dict(day_bri=-1),
+    dict(day_bri=51),
+    dict(night_bri=-1),
+    dict(night_bri=51),
+])
+def test_set_solar_invalid_raises(kwargs):
+    api, writer, _ = _api()
+    args = dict(
+        lat=-22.9, lon=-43.2,
+        day_color="#FFFFFF", night_color="#FF0000",
+        day_bri=50, night_bri=10,
+    )
+    args.update(kwargs)
+    with pytest.raises(ValueError):
+        api.SetSolar(**args)
+    assert writer.saved is None
 
 
 def test_set_solar():

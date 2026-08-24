@@ -19,6 +19,11 @@ VALID_EFFECTS = (
 )
 
 
+def kb_to_lb_brightness(b: int) -> int:
+    """Map keyboard brightness (0-50 scale) to lightbar brightness (0-100 scale)."""
+    return min(100, b * 2)
+
+
 @dataclass(frozen=True)
 class Preset:
     color: str
@@ -137,7 +142,7 @@ class Config:
             self.color,
             self.brightness,
             self.color,
-            min(100, self.brightness * 2),
+            kb_to_lb_brightness(self.brightness),
         )
 
     def to_dict(self) -> dict:

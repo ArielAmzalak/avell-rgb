@@ -3,12 +3,32 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from dataclasses import replace
 from typing import Callable
 
-from avell_rgb.state import Config, EffectConfig, Preset, SolarConfig
+from avell_rgb.state import (
+    VALID_EFFECTS,
+    VALID_MODES,
+    Config,
+    EffectConfig,
+    Preset,
+    SolarConfig,
+)
 
 VALID_DEVICES = ("keyboard", "lightbar")
+
+_HEX_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
+
+
+def _validate_hex(s: str) -> None:
+    if not _HEX_RE.fullmatch(s):
+        raise ValueError(f"invalid color: {s!r} (expected #RRGGBB)")
+
+
+def _validate_range(what: str, value: float, lo: float, hi: float) -> None:
+    if not lo <= value <= hi:
+        raise ValueError(f"{what} must be between {lo} and {hi}, got {value}")
 
 
 class DaemonDBusAPI:
@@ -28,9 +48,13 @@ class DaemonDBusAPI:
         self._wakeup.set()
 
     def SetMode(self, mode: str) -> None:
+        if mode not in VALID_MODES:
+            raise ValueError(f"invalid mode: {mode!r}")
         self._update(mode=mode)
 
     def SetColor(self, hex_color: str, brightness: int) -> None:
+        _validate_hex(hex_color)
+        _validate_range("brightness", brightness, 0, 50)
         self._update(
             mode="fixed",
             color=hex_color,
@@ -41,6 +65,8 @@ class DaemonDBusAPI:
     def SetDeviceColor(self, device: str, hex_color: str, brightness: int) -> None:
         if device not in VALID_DEVICES:
             raise ValueError(f"invalid device: {device!r}")
+        _validate_hex(hex_color)
+        _validate_range("brightness", brightness, 0, 50 if device == "keyboard" else 100)
         fields = {
             f"{device}_color": hex_color,
             f"{device}_brightness": brightness,
@@ -48,12 +74,23 @@ class DaemonDBusAPI:
         self._update(mode="fixed", independent_colors=True, **fields)
 
     def SetEffect(self, name: str, color: str, speed: int, brightness: int) -> None:
+        if name not in VALID_EFFECTS:
+            raise ValueError(f"invalid effect: {name!r}")
+        _validate_hex(color)
+        _validate_range("speed", speed, 0, 10)
+        _validate_range("brightness", brightness, 0, 50)
         self._update(
             mode="effect",
             effect=EffectConfig(name=name, color=color, speed=speed, brightness=brightness),
         )
 
     def SetSolar(self, lat: float, lon: float, day_color: str, night_color: str, day_bri: int, night_bri: int) -> None:
+        _validate_hex(day_color)
+        _validate_hex(night_color)
+        _validate_range("latitude", lat, -90, 90)
+        _validate_range("longitude", lon, -180, 180)
+        _validate_range("day brightness", day_bri, 0, 50)
+        _validate_range("night brightness", night_bri, 0, 50)
         self._update(
             mode="solar",
             solar=SolarConfig(
@@ -64,6 +101,8 @@ class DaemonDBusAPI:
         )
 
     def ApplyPreset(self, name: str) -> None:
+        if name not in self.config.presets:
+            raise ValueError(f"unknown preset: {name!r}")
         preset = self.config.presets[name]
         if preset.independent:
             self._update(

@@ -19,8 +19,8 @@ class FakeKeyboardBackend:
     def apply_solid(self, rgb, brightness):
         self.calls.append(("apply_solid", (rgb, brightness)))
 
-    def apply_effect(self, effect, color, speed, direction, brightness):
-        self.calls.append(("apply_effect", (effect, color, speed, direction, brightness)))
+    def apply_effect(self, effect, color, speed, brightness):
+        self.calls.append(("apply_effect", (effect, color, speed, brightness)))
 
     def off(self):
         self.calls.append(("off", ()))

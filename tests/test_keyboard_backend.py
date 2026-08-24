@@ -18,11 +18,46 @@ def test_available_true_when_binary_present(backend, monkeypatch):
     assert backend.available() is True
 
 
-def test_available_false_when_binary_missing(backend, monkeypatch):
+def test_available_false_when_binary_missing(backend, monkeypatch, tmp_path):
     monkeypatch.setattr(
         "avell_rgb.backends.keyboard.shutil.which", lambda name: None
     )
+    monkeypatch.setattr(
+        "avell_rgb.backends.keyboard.Path.home", lambda: tmp_path
+    )
     assert backend.available() is False
+
+
+def test_available_true_via_local_bin_fallback(backend, monkeypatch, tmp_path):
+    """systemd units may lack ~/.local/bin in PATH; fallback must be probed."""
+    monkeypatch.setattr(
+        "avell_rgb.backends.keyboard.shutil.which", lambda name: None
+    )
+    fake = tmp_path / ".local" / "bin" / "ite8291r3-ctl"
+    fake.parent.mkdir(parents=True)
+    fake.write_text("#!/bin/sh\n")
+    fake.chmod(0o755)
+    monkeypatch.setattr(
+        "avell_rgb.backends.keyboard.Path.home", lambda: tmp_path
+    )
+    assert backend.available() is True
+
+
+def test_run_uses_local_bin_fallback_path(backend, monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "avell_rgb.backends.keyboard.shutil.which", lambda name: None
+    )
+    fake = tmp_path / ".local" / "bin" / "ite8291r3-ctl"
+    fake.parent.mkdir(parents=True)
+    fake.write_text("#!/bin/sh\n")
+    fake.chmod(0o755)
+    monkeypatch.setattr(
+        "avell_rgb.backends.keyboard.Path.home", lambda: tmp_path
+    )
+    with patch("avell_rgb.backends.keyboard.subprocess.run") as run:
+        backend.off()
+        args = run.call_args.args[0]
+        assert args[0] == str(fake)
 
 
 def test_apply_solid_calls_monocolor(backend):
@@ -43,7 +78,6 @@ def test_apply_effect_calls_effect(backend):
             effect="breathing",
             color="random",
             speed=5,
-            direction="right",
             brightness=40,
         )
         args = run.call_args.args[0]
@@ -53,23 +87,8 @@ def test_apply_effect_calls_effect(backend):
         assert "random" in args
         assert "-s" in args
         assert "5" in args
-        assert "-d" in args
-        assert "right" in args
         assert "-b" in args
         assert "40" in args
-
-
-def test_apply_effect_without_direction_omits_flag(backend):
-    with patch("avell_rgb.backends.keyboard.subprocess.run") as run:
-        backend.apply_effect(
-            effect="breathing",
-            color="purple",
-            speed=3,
-            direction=None,
-            brightness=25,
-        )
-        args = run.call_args.args[0]
-        assert "-d" not in args
 
 
 @pytest.mark.parametrize(
@@ -94,7 +113,6 @@ def test_apply_effect_hex_color_maps_to_palette(backend, hex_color, expected_pal
             effect="breathing",  # effect that accepts -c
             color=hex_color,
             speed=5,
-            direction=None,
             brightness=30,
         )
         args = run.call_args.args[0]
@@ -109,7 +127,6 @@ def test_apply_effect_passthrough_palette_name(backend):
             effect="breathing",
             color="teal",
             speed=5,
-            direction=None,
             brightness=30,
         )
         args = run.call_args.args[0]
@@ -124,7 +141,6 @@ def test_apply_effect_wave_omits_color(backend):
             effect="wave",
             color="#FF0000",
             speed=5,
-            direction="right",
             brightness=30,
         )
         args = run.call_args.args[0]
@@ -139,7 +155,6 @@ def test_apply_effect_marquee_omits_color(backend):
             effect="marquee",
             color="#00FF00",
             speed=3,
-            direction=None,
             brightness=20,
         )
         args = run.call_args.args[0]
@@ -153,7 +168,6 @@ def test_apply_effect_rainbow_omits_color_and_speed(backend):
             effect="rainbow",
             color="#FF0000",
             speed=5,
-            direction=None,
             brightness=40,
         )
         args = run.call_args.args[0]
@@ -176,5 +190,21 @@ def test_nonzero_exit_does_not_raise(backend, caplog):
     with patch(
         "avell_rgb.backends.keyboard.subprocess.run",
         side_effect=subprocess.CalledProcessError(1, "ite8291r3-ctl"),
+    ):
+        backend.off()  # must not raise
+
+
+def test_run_passes_timeout(backend):
+    with patch("avell_rgb.backends.keyboard.subprocess.run") as run:
+        backend.off()
+        assert run.call_args.kwargs["timeout"] == 5
+
+
+def test_timeout_does_not_raise(backend, caplog):
+    import subprocess
+
+    with patch(
+        "avell_rgb.backends.keyboard.subprocess.run",
+        side_effect=subprocess.TimeoutExpired("ite8291r3-ctl", 5),
     ):
         backend.off()  # must not raise

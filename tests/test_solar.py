@@ -37,3 +37,14 @@ def test_interpolate_solar_returns_color_and_brightness():
     assert color.startswith("#")
     assert 0 <= kb_bri <= 50
     assert 0 <= lb_bri <= 100
+
+
+def test_interpolate_solar_clamps_negative_brightness():
+    cfg = SolarConfig(
+        latitude=-23.55, longitude=-46.63,
+        day_color="#FFFFFF", night_color="#000000",
+        day_brightness=-5, night_brightness=-10,
+    )
+    _, kb_bri, lb_bri = interpolate_solar(cfg, datetime(2026, 4, 10, 12, 0))
+    assert kb_bri == 0
+    assert lb_bri == 0
