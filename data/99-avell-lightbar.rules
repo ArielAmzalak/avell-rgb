@@ -1,0 +1,1 @@
+SUBSYSTEM=="leds", KERNEL=="rgb:lightbar", RUN+="/bin/chmod 0666 /sys/class/leds/%k/brightness /sys/class/leds/%k/multi_intensity"

@@ -4,6 +4,7 @@ After=graphical-session.target
 
 [Service]
 Type=simple
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=%h/.local/bin/avell-rgb-daemon
 Restart=on-failure
 RestartSec=3

@@ -46,6 +46,43 @@ install -Dm644 data/avell-rgb-daemon.service \
 systemctl --user daemon-reload
 systemctl --user enable --now avell-rgb-daemon.service
 
+echo "==> Verificando permissões de escrita da light bar"
+LB_SYS=/sys/class/leds/rgb:lightbar
+if [ -w "$LB_SYS/brightness" ] && [ -w "$LB_SYS/multi_intensity" ]; then
+  echo "✓ light bar gravável ($LB_SYS)"
+else
+  echo
+  echo "############################################################"
+  echo "#  ATENÇÃO: light bar SEM permissão de escrita             #"
+  echo "#  ($LB_SYS/{brightness,multi_intensity})                  #"
+  echo "#  O daemon vai rodar, mas a barra ficará morta até você   #"
+  echo "#  instalar (uma única vez, como root) os dois arquivos    #"
+  echo "#  versionados em data/. Rode:                             #"
+  echo "############################################################"
+  echo
+  echo "  sudo install -Dm644 data/99-avell-lightbar.rules /etc/udev/rules.d/99-avell-lightbar.rules"
+  echo "  sudo install -Dm644 data/lightbar.conf /etc/tmpfiles.d/lightbar.conf"
+  echo "  sudo udevadm control --reload"
+  echo "  sudo udevadm trigger --subsystem-match=leds"
+  echo "  sudo systemd-tmpfiles --create /etc/tmpfiles.d/lightbar.conf"
+  echo
+  if sudo -n true 2>/dev/null && [ -t 0 ]; then
+    printf "sudo sem senha disponível — executar os comandos acima agora? [s/N] "
+    read -r LB_RESP || LB_RESP=""
+    case "$LB_RESP" in
+    [sSyY]*)
+      sudo -n install -Dm644 data/99-avell-lightbar.rules /etc/udev/rules.d/99-avell-lightbar.rules \
+        && sudo -n install -Dm644 data/lightbar.conf /etc/tmpfiles.d/lightbar.conf \
+        && sudo -n udevadm control --reload \
+        && sudo -n udevadm trigger --subsystem-match=leds \
+        && sudo -n systemd-tmpfiles --create /etc/tmpfiles.d/lightbar.conf \
+        && echo "✓ permissões da light bar instaladas" \
+        || echo "✗ falha ao aplicar — rode os comandos acima manualmente"
+      ;;
+    esac
+  fi
+fi
+
 echo
 echo "==> Pronto. Abra 'Avell RGB' no menu de aplicações."
 echo "==> Daemon status: $(systemctl --user is-active avell-rgb-daemon.service)"

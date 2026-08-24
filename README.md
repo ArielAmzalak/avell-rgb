@@ -13,9 +13,24 @@ para o design spec completo.
 - Linux com kernel >= 6.1
 - `ite8291r3-ctl` no PATH (keyboard RGB)
 - Módulo kernel `ite_8291_lb` carregado (light bar)
-- `/sys/class/leds/rgb:lightbar/{brightness,multi_intensity}` com escrita
-  permitida pro usuário
+- Permissões de escrita na light bar — veja a seção
+  [Permissões da light bar](#permissões-da-light-bar) abaixo
 - Python 3.11+, `python3-gi`, `gir1.2-adw-1`
+
+## Permissões da light bar
+
+Por padrão só root escreve em
+`/sys/class/leds/rgb:lightbar/{brightness,multi_intensity}`. O repositório
+versiona os dois arquivos que abrem essa permissão de forma persistente:
+
+- [`data/99-avell-lightbar.rules`](data/99-avell-lightbar.rules) — regra udev
+  (aplica `chmod` quando o LED aparece)
+- [`data/lightbar.conf`](data/lightbar.conf) — entrada tmpfiles.d (reaplica a
+  cada boot)
+
+O `scripts/install-user.sh` verifica se a escrita está liberada e, se não
+estiver, imprime os comandos `sudo` exatos para instalar os dois arquivos
+(passo único por máquina).
 
 ## Licença
 
