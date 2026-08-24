@@ -647,10 +647,24 @@ class AvellWindow(Adw.ApplicationWindow):
             self._debounce("color", lambda: self._client.set_color(
                 self._synced_ctl.hex, self._synced_ctl.bri))
         else:
-            self._suppress = True
+            # Restore the preserved per-device values from the daemon instead
+            # of overwriting them with a copy of the synced color.
             c, b = self._synced_ctl.hex, self._synced_ctl.bri
-            self._kb_ctl.set(c, b)
-            self._lb_ctl.set(c, min(100, b * 2))
+            kb_c, kb_b = c, b
+            lb_c, lb_b = c, min(100, b * 2)
+            try:
+                state = self._client.get_state()
+                if state.get("keyboard_color"):
+                    kb_c = state["keyboard_color"]
+                    kb_b = int(state.get("keyboard_brightness", kb_b))
+                if state.get("lightbar_color"):
+                    lb_c = state["lightbar_color"]
+                    lb_b = int(state.get("lightbar_brightness", lb_b))
+            except Exception:
+                log.warning("daemon unavailable; splitting from synced values")
+            self._suppress = True
+            self._kb_ctl.set(kb_c, kb_b)
+            self._lb_ctl.set(lb_c, lb_b)
             self._suppress = False
             self._fixed_stack.set_visible_child_name("split")
             self._sync_preview()
